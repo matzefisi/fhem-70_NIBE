@@ -17,14 +17,11 @@ $serial->purge_all();		# ????
 $serial->lookclear();		# Clear all the buffers
 
 # Define the basic variables
-my $counter=0;			# General counter to stop the programm after a certain period
 my @daten;			# Array for storing the mesage
 my $serial_write="";		# String for the data which should be sent
 my $serial_read="";		# String for reading the serial data
 
-while($counter < 39999) {
-	# Increase counter to have a predefined stop point of the script to cleanly close the serial port. 
-	$counter=$counter+1;
+while(1) {
 
 	# Read One byte from the serial line
 	my($count, $serial_read) = $serial->read(1);
@@ -47,8 +44,9 @@ while($counter < 39999) {
 
 			# Send the ACK byte. This currently does not work. The script stops at this point without any error message. TODO!
 			# If this is not solved, the heater jumps within a few seconds into alert mode. 
-			#$serial->write("\x06")  || die "Cant write to serial port. $^E\n";
-	                #$serial->write_drain;
+			$serial_write = pack( 'H[2]', '06');
+			$serial->write($serial_write)  || die "Cant write to serial port. $^E\n";
+	                $serial->write_drain;
 
 			# Calculate checksum
 			my $j=0;
@@ -65,17 +63,30 @@ while($counter < 39999) {
 			} else {
 				print " - Checksum not OK\n";
 			}
+			
+			if ($daten[3] eq "68") {
+				my $j=5;
+				print "Found data: \n";
+				while($j <  hex($daten[4])+5) {
+					print hex($daten[$j+1].$daten[$j]); 
+					print " ";
+					print $daten[$j+3].$daten[$j+2];
+					print "\n";
+					$j=$j+4;
+				}
+			}
+
 
 			# Print the full data
-			for (my $j = 0; $j < 0+@daten; $j++) {
-				print $daten[$j];
-			}
-			print "\n\n";
-
+			#for (my $j = 0; $j < 0+@daten; $j++) {
+			#	print $daten[$j];
+			#}
 
 			@daten=();
 		}
 	}
+
+	$SIG{INT} = sub { die "Caught a sigint $!" };
 }
 
 $serial->close ||warn "Close Failed";
