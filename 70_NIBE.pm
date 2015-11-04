@@ -38,20 +38,112 @@ sub NIBE_Initialize ($)
 	$hash->{GetFn}      = "NIBE_Get";				# Manually get data
 	$hash->{ParseFn}    = "NIBE_Parse";				# Parse function - Only used for two step modules?
 	$hash->{StateFn}    = "NIBE_SetState";			# Only used for setting the state of the module?
-	$hash->{Match}      = ".*";						# ???????????????????
-	$hash->{AttrList}   = $readingFnAttributes;		# Define the possible Attributes
+	# $hash->{Match}      = ".*";						# ???????????????????
+	# $hash->{AttrList}   = $readingFnAttributes;		# Define the possible Attributes
 	$hash->{ShutdownFn} = "NIBE_Shutdown";			# ????
 }
 
 sub NIBE_Define ($)
 {
 	#(wird beim define aufgerufen)
-	Log3 "DeviceName", 3, "NIBE_Define" . @_;
+	my ($hash, $def) = @_;
+	my @a = split("[ \t][ \t]*", $def);
+	return "wrong syntax: 'define <name> NIBE <devicename>'"
+	if(@a < 3);
+
+	DevIo_CloseDev($hash);
+
+	my $name = $a[0];
+	my $dev = $a[2];
+		
+	#$hash->{fhem}{interfaces} = "power";
+
+	#$attr{$name}{"event-min-interval"} = ".*:30";
+
+	$hash->{DeviceName}   = $dev;
+
+	Log3 $hash, 5, "NIBE: Defined";
+
+	my $ret = DevIo_OpenDev($hash, 0, "NIBE_DoInit");
+
+	return $ret;
+}
+
+sub NIBE_SetState($$$$) {
+  my ($hash, $tim, $vt, $val) = @_;
+  return undef;
+}
+
+sub NIBE_Clear($) {
+	my $hash = shift;
+	my $buf;
+	# clear buffer:
+	if($hash->{NIBE}) 
+	   {
+	   while ($hash->{NIBE}->lookfor()) 
+		  {
+		  $buf = DevIo_DoSimpleRead($hash);
+		  $buf = uc(unpack('H*',$buf));
+		  }
+	   }
+
+	return $buf;
+} 
+
+sub NIBE_DoInit($) {
+	my $hash = shift;
+	my $name = $hash->{NAME}; 
+	my $init ="?";
+	my $buf;
+
+	#$serial->baudrate(9600);	# Set the baudrate / port speed
+	#$serial->databits(8);		# 8 Databits
+	#$serial->parity("none");	# No parity bit
+	#$serial->stopbits(1);		# One Stopbit
+	#$serial->purge_all();		# ????
+	#$serial->lookclear();		# Clear all the buffers
+
+	NIBE_Clear($hash); 
+
+	return undef; 
 }
 
 sub NIBE_Undef ($) {
 #(wird beim Löschen einer Geräteinstanz aufgerufen - Gegenteil zu define)
+	my ($hash, $arg) = @_;
+	my $name = $hash->{NAME};
+	delete $hash->{FD};
+	$hash->{STATE}='close';
+	$hash->{NIBE}->close() if($hash->{NIBE});
+	Log3 $hash, 0, "NIBE: Undefined";
+	return undef;
 }
+
+sub NIBE_Shutdown($) {
+  my ($hash) = @_;
+  DevIo_CloseDev($hash); 
+  return undef;
+}
+
+sub NIBE_Disconnected($) {
+  my $hash = shift;
+  my $dev = $hash->{DeviceName};
+  my $name = $hash->{NAME};
+ 	
+  return if(!defined($hash->{FD})); # Already deleted
+	
+  DevIo_CloseDev($hash);
+  Log3 $hash, 1, "NIBE: $dev disconnected, waiting to reappear";
+
+  $readyfnlist{"$name.$dev"} = $hash; # Start polling
+  $hash->{STATE} = "disconnected";
+	
+  # Without the following sleep the open of the device causes a SIGSEGV,
+  # and following opens block infinitely. Only a reboot helps.
+  sleep(5);
+
+  DoTrigger($name, "DISCONNECTED");
+} 
 
 sub NIBE_Set ($)
 {
@@ -97,8 +189,19 @@ sub NIBE_Read ($)
 {
 #(wird vom globalen select aufgerufen, falls Daten zur Verfuegung stehen)
 #$hash->{READINGS}{state}
-	Log3 "DeviceName", 3, "NIBE_Read" . @_;
-	
+    my $hash = shift;
+    my $name = $hash->{NAME};
+    my $buf  = DevIo_SimpleRead($hash);
+
+	if(!defined($buf) || length($buf) == 0) {
+		NIBE_Disconnected($hash);
+		return "";
+	}
+
+    Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
+
+    #$hash->{helper}{buffer} .= $buf;  
+
 	# Populate the reading(s)
 	#readingsBeginUpdate($hash);
 	#readingsBulkUpdate($hash, $readingName1, $wert1 );
@@ -115,7 +218,7 @@ sub NIBE_Ready
 {
 #(wird unter windows als ReadFn-Erstatz benoetigt bzw. um zu pruefen, ob ein Geraet wieder eingesteckt ist)
   my ($hash) = @_;
-  return DevIo_OpenDev($hash, 0, "SMLUSB_DoInit")
+  return DevIo_OpenDev($hash, 0, "NIBE_DoInit")
 	if($hash->{STATE} eq "disconnected");
 }
 	
