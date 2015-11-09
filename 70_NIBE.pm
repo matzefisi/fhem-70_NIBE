@@ -39,7 +39,7 @@ sub NIBE_Initialize ($)
 	$hash->{ParseFn}    = "NIBE_Parse";				# Parse function - Only used for two step modules?
 	$hash->{StateFn}    = "NIBE_SetState";			# Only used for setting the state of the module?
 	# $hash->{Match}      = ".*";						# ???????????????????
-	# $hash->{AttrList}   = $readingFnAttributes;		# Define the possible Attributes
+	$hash->{AttrList}   = $readingFnAttributes;		# Define the possible Attributes
 	$hash->{ShutdownFn} = "NIBE_Shutdown";			# ????
 }
 
@@ -58,7 +58,11 @@ sub NIBE_Define ($)
 		
 	#$hash->{fhem}{interfaces} = "power";
 
-	#$attr{$name}{"event-min-interval"} = ".*:30";
+	$attr{$name}{"event-min-interval"} = ".*:30";
+
+    # set baudrate to 9600 if not defined
+	my ($devname, $baudrate) = split("@", $dev);
+	$dev .= "@9600" if (!defined($baudrate));
 
 	$hash->{DeviceName}   = $dev;
 
@@ -185,6 +189,36 @@ sub NIBE_Get ($) {
 #(wird beim Befehl attr aufgerufen um beispielsweise Werte zu prüfen)
 #}
 
+sub NIBE_ParseFrame ($$) {
+    my ($hash, $length) = @_;
+    my $name = $hash->{NAME};
+    my $frame = substr($hash->{helper}{buffer}, index($hash->{helper}{buffer},"5c00"));
+    
+    Log3 $name, 4, "$name: parse: $frame";
+
+    # Send the ACK byte.
+    DevIo_SimpleWrite($hash, '06', 1);
+    
+    # Calculate checksum
+    my $j=0;
+    my $checksum=0;
+    for (my $j = 2; $j < $length+5; $j++) {
+            $checksum = $checksum^hex(substr($frame, $j*2 ,2));
+    }
+
+    # what we got so far
+    Log3 $name, 4, "$name: HEAD: ".substr($frame,0,4)." ADDR: ".substr($frame,4,2)." CMD: ".substr($frame,6,2)." LEN: ".substr($frame,8,2)." CHK: ".substr($frame,length($frame)-2,2);
+
+
+    if ($checksum==hex(substr($frame, length($frame)-2, 2))) {
+        Log3 $name, 4, "$name: Checksum OK";
+    } else {
+        Log3 $name, 4, "$name: Checksum not OK";
+    }
+    
+    $hash->{helper}{buffer} = "";
+}
+
 sub NIBE_Read ($)
 {
 #(wird vom globalen select aufgerufen, falls Daten zur Verfuegung stehen)
@@ -200,7 +234,15 @@ sub NIBE_Read ($)
 
     Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
 
-    #$hash->{helper}{buffer} .= $buf;  
+    $hash->{helper}{buffer} .= unpack ('H*', $buf);
+    if ($hash->{helper}{buffer} =~ m/5c00(.{2})(.{2})(.{2}).*/) {
+      my $address = $1;
+      my $command = $2;
+      my $length  = hex($3);
+      
+      NIBE_ParseFrame($hash, $length)
+          if (length($hash->{helper}{buffer})/2 >= index($hash->{helper}{buffer}, "5c00") + $length + 6);
+    }  
 
 	# Populate the reading(s)
 	#readingsBeginUpdate($hash);
