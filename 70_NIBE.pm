@@ -1,7 +1,7 @@
 #################################################################################
 # 70_NIBE.pm
 # Module to read and write messages to NIBE heat pumps
-# Supported models: F750, ....
+# Supported models: F750, F1245, ....
 #
 # Currently this module works with a USB to RS485 interface which is directly 
 # connected to the heatpump using the MODBUS 40 address. The MODBUS 40 module
@@ -62,7 +62,7 @@ sub NIBE_Define ($)
 
     # set baudrate to 9600 if not defined
 	my ($devname, $baudrate) = split("@", $dev);
-	$dev .= "@9600" if (!defined($baudrate));
+	$dev .= '@9600' if (!defined($baudrate));
 
 	$hash->{DeviceName}   = $dev;
 
@@ -189,16 +189,13 @@ sub NIBE_Get ($) {
 #(wird beim Befehl attr aufgerufen um beispielsweise Werte zu prüfen)
 #}
 
-sub NIBE_ParseFrame ($$) {
-    my ($hash, $length) = @_;
+sub NIBE_ParseFrame ($$$) {
+    my ($hash, $length, $command) = @_;
     my $name = $hash->{NAME};
     my $frame = substr($hash->{helper}{buffer}, index($hash->{helper}{buffer},"5c00"));
     
     Log3 $name, 4, "$name: parse: $frame";
 
-    # Send the ACK byte.
-    DevIo_SimpleWrite($hash, '06', 1);
-    
     # Calculate checksum
     my $j=0;
     my $checksum=0;
@@ -207,11 +204,49 @@ sub NIBE_ParseFrame ($$) {
     }
 
     # what we got so far
-    Log3 $name, 4, "$name: HEAD: ".substr($frame,0,4)." ADDR: ".substr($frame,4,2)." CMD: ".substr($frame,6,2)." LEN: ".substr($frame,8,2)." CHK: ".substr($frame,length($frame)-2,2);
+    Log3 $name, 4, "$name: HEAD: ".substr($frame,0,4)." ADDR: ".substr($frame,4,2)
+                        ." CMD: ".substr($frame,6,2)." LEN: ".substr($frame,8,2)
+                        ." CHK: ".substr($frame,length($frame)-2,2);
 
 
     if ($checksum==hex(substr($frame, length($frame)-2, 2))) {
         Log3 $name, 4, "$name: Checksum OK";
+
+        # Check if we got a message with the command 68 
+        # In this message we can expect 20 values from the heater which were defined with the help of ModbusManager
+        if ($command eq "68") {
+            # Populate the reading(s)
+            readingsBeginUpdate($hash);
+
+            my $j=10;
+            while($j <  $length*2) {
+                if (substr($frame,$j,8) =~ m/(.{2})(.{2})(.{2})(.{2})/) {
+                    my $register = $2.$1;
+                    my $value    = $4.$3;
+  
+                    if ($register ne "ffff") {    
+                        # Getting the register name
+                        my $reading = return_register( hex($register),0);
+                    
+                        # Calculating the actual value
+                        my $reading_value;
+                        if (defined($reading)) {
+                            my $valuetype  = return_register( hex($register),3);
+                            my $factor     = return_register( hex($register),4);
+                            $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
+                        } else {
+                            Log3 $name, 3, "$name: Register ".hex($register)." not defined";
+                            $reading_value = $value;
+                        }
+
+                        readingsBulkUpdate($hash, $reading, $reading_value);
+                    }
+                }
+                $j += 8;
+            }
+
+            readingsEndUpdate($hash, 1);
+        }
     } else {
         Log3 $name, 4, "$name: Checksum not OK";
     }
@@ -236,19 +271,17 @@ sub NIBE_Read ($)
 
     $hash->{helper}{buffer} .= unpack ('H*', $buf);
     if ($hash->{helper}{buffer} =~ m/5c00(.{2})(.{2})(.{2}).*/) {
-      my $address = $1;
-      my $command = $2;
-      my $length  = hex($3);
-      
-      NIBE_ParseFrame($hash, $length)
-          if (length($hash->{helper}{buffer})/2 >= index($hash->{helper}{buffer}, "5c00") + $length + 6);
+        my $address = $1;
+        my $command = $2;
+        my $length  = hex($3);
+        
+        if (length($hash->{helper}{buffer})/2 >= index($hash->{helper}{buffer}, "5c00") + $length + 6) {
+            # Send the ACK byte.
+            DevIo_SimpleWrite($hash, '06', 1);
+            # Parse
+            NIBE_ParseFrame($hash, $length, $command);
+        }
     }  
-
-	# Populate the reading(s)
-	#readingsBeginUpdate($hash);
-	#readingsBulkUpdate($hash, $readingName1, $wert1 );
-	#readingsBulkUpdate($hash, $readingName2, $wert2 );
-	#readingsEndUpdate($hash, 1);
 }
 
 sub  NIBE_Parse 
@@ -271,26 +304,26 @@ sub NIBE_Ready
 sub return_normalizedvalue {
 	# Helper for normalizing the value
 	#s16, #s32, #u16, u8, #u32, #s8
-	my (@input) = @_;
-	if ($input[0] eq "s8") {
-	    return 0 if $input[1] !~ /^[0-9A-Fa-f]{1,2}$/;
-		my $num = hex($input[1]);
+	my ($type, $value) = @_;
+	if ($type eq "s8") {
+	    return 0 if $value !~ /^[0-9A-Fa-f]{1,2}$/;
+		my $num = hex($value);
 		return $num >> 7 ? $num - 2 ** 8 : $num;
 	}
-	elsif ($input[0] eq "s16") {
-		return 0 if $input[1] !~ /^[0-9A-Fa-f]{1,4}$/;
-		my $num = hex($input[1]);
+	elsif ($type eq "s16") {
+		return 0 if $value !~ /^[0-9A-Fa-f]{1,4}$/;
+		my $num = hex($value);
 		return $num >> 15 ? $num - 2 ** 16 : $num;
 	}
-	elsif ($input[0] eq "s32") {
-		return 0 if $input[1] !~ /^[0-9A-Fa-f]{1,8}$/;
-		my $num = hex($input[1]);
+	elsif ($type eq "s32") {
+		return 0 if $value !~ /^[0-9A-Fa-f]{1,8}$/;
+		my $num = hex($value);
 		return $num >> 31 ? $num - 2 ** 32 : $num;
 	}
 	else {
 		# To be done!
 		# Lazy replacement for U8 -> U32
-		return hex($input[1]);
+		return hex($value);
 	}
 }
 
