@@ -208,9 +208,13 @@ sub NIBE_ParseFrame ($$$) {
                         ." CMD: ".substr($frame,6,2)." LEN: ".substr($frame,8,2)
                         ." CHK: ".substr($frame,length($frame)-2,2);
 
-
     if ($checksum==hex(substr($frame, length($frame)-2, 2))) {
         Log3 $name, 4, "$name: Checksum OK";
+
+        Log3 $name, 5, "$name: Sending ACK";
+        my $serial_write = pack( 'H[2]', '06');
+        $hash->{USBDev}->write($serial_write);
+        $hash->{USBDev}->write_drain;
 
         # Check if we got a message with the command 68 
         # In this message we can expect 20 values from the heater which were defined with the help of ModbusManager
@@ -260,27 +264,32 @@ sub NIBE_Read ($)
 #$hash->{READINGS}{state}
     my $hash = shift;
     my $name = $hash->{NAME};
-    my $buf  = DevIo_SimpleRead($hash);
+    #my $buf  = DevIo_SimpleRead($hash);
+    my $buf  = $hash->{USBDev}->read(1);
 
 	if(!defined($buf) || length($buf) == 0) {
 		NIBE_Disconnected($hash);
 		return "";
 	}
 
-    Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
-
+    #Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
+    
     $hash->{helper}{buffer} .= unpack ('H*', $buf);
-    if ($hash->{helper}{buffer} =~ m/5c00(.{2})(.{2})(.{2}).*/) {
+
+    Log3 $name, 5, "$name: buffer: $hash->{helper}{buffer}";
+
+
+    if ($hash->{helper}{buffer} =~ m/^5c00(.{2})(.{2})(.{2}).*/) {
         my $address = $1;
         my $command = $2;
         my $length  = hex($3);
         
         if (length($hash->{helper}{buffer})/2 >= index($hash->{helper}{buffer}, "5c00") + $length + 6) {
-            # Send the ACK byte.
-            DevIo_SimpleWrite($hash, '06', 1);
-            # Parse
-            NIBE_ParseFrame($hash, $length, $command);
+	    NIBE_ParseFrame($hash, $length, $command);
         }
+    } 
+    else {
+	    $hash->{helper}{buffer} = "" if length($hash->{helper}{buffer}) > 9;
     }  
 }
 
