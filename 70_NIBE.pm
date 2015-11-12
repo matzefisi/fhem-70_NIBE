@@ -189,32 +189,26 @@ sub NIBE_Get ($) {
 #(wird beim Befehl attr aufgerufen um beispielsweise Werte zu prüfen)
 #}
 
-sub NIBE_ParseFrame ($$$) {
-    my ($hash, $length, $command) = @_;
+sub NIBE_ParseFrame ($$$$) {
+    my ($hash, $length, $command, $frame) = @_;
     my $name = $hash->{NAME};
-    my $frame = substr($hash->{helper}{buffer}, index($hash->{helper}{buffer},"5c00"));
     
-    Log3 $name, 4, "$name: parse: $frame";
+    Log3 $name, 5, "$name: parse: $frame";
 
     # Calculate checksum
-    my $j=0;
     my $checksum=0;
     for (my $j = 2; $j < $length+5; $j++) {
             $checksum = $checksum^hex(substr($frame, $j*2 ,2));
     }
 
     # what we got so far
-    Log3 $name, 4, "$name: HEAD: ".substr($frame,0,4)." ADDR: ".substr($frame,4,2)
+    Log3 $name, 5, "$name: HEAD: ".substr($frame,0,4)." ADDR: ".substr($frame,4,2)
                         ." CMD: ".substr($frame,6,2)." LEN: ".substr($frame,8,2)
                         ." CHK: ".substr($frame,length($frame)-2,2);
 
-    if ($checksum==hex(substr($frame, length($frame)-2, 2))) {
-        Log3 $name, 4, "$name: Checksum OK";
 
-        Log3 $name, 5, "$name: Sending ACK";
-        my $serial_write = pack( 'H[2]', '06');
-        $hash->{USBDev}->write($serial_write);
-        $hash->{USBDev}->write_drain;
+    if ($checksum==hex(substr($frame, length($frame)-2, 2))) {
+        Log3 $name, 5, "$name: Checksum OK";
 
         # Check if we got a message with the command 68 
         # In this message we can expect 20 values from the heater which were defined with the help of ModbusManager
@@ -222,9 +216,9 @@ sub NIBE_ParseFrame ($$$) {
             # Populate the reading(s)
             readingsBeginUpdate($hash);
 
-            my $j=10;
-            while($j <  $length*2) {
-                if (substr($frame,$j,8) =~ m/(.{2})(.{2})(.{2})(.{2})/) {
+            my $j=5;
+            while($j < $length) {
+                if (substr($frame,$j*2,8) =~ m/(.{2})(.{2})(.{2})(.{2})/) {
                     my $register = $2.$1;
                     my $value    = $4.$3;
   
@@ -238,24 +232,22 @@ sub NIBE_ParseFrame ($$$) {
                             my $valuetype  = return_register( hex($register),3);
                             my $factor     = return_register( hex($register),4);
                             $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
+                            readingsBulkUpdate($hash, $reading, $reading_value);
                         } else {
                             Log3 $name, 3, "$name: Register ".hex($register)." not defined";
-                            $reading_value = $value;
+                            Log3 $name, 4, "$name: $frame";
                         }
-
-                        readingsBulkUpdate($hash, $reading, $reading_value);
                     }
                 }
-                $j += 8;
+                $j += 4;
             }
-
             readingsEndUpdate($hash, 1);
         }
     } else {
         Log3 $name, 4, "$name: Checksum not OK";
+        Log3 $name, 4, "$name: $frame";
     }
     
-    $hash->{helper}{buffer} = "";
 }
 
 sub NIBE_Read ($)
@@ -264,32 +256,39 @@ sub NIBE_Read ($)
 #$hash->{READINGS}{state}
     my $hash = shift;
     my $name = $hash->{NAME};
-    #my $buf  = DevIo_SimpleRead($hash);
-    my $buf  = $hash->{USBDev}->read(1);
+    my $buf  = DevIo_SimpleRead($hash);
 
 	if(!defined($buf) || length($buf) == 0) {
 		NIBE_Disconnected($hash);
 		return "";
 	}
 
-    #Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
-    
+    Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
+
     $hash->{helper}{buffer} .= unpack ('H*', $buf);
-
-    Log3 $name, 5, "$name: buffer: $hash->{helper}{buffer}";
-
-
-    if ($hash->{helper}{buffer} =~ m/^5c00(.{2})(.{2})(.{2}).*/) {
+    while ($hash->{helper}{buffer} =~ m/5c00(.{2})(.{2})(.{2}).*/) {
         my $address = $1;
         my $command = $2;
         my $length  = hex($3);
         
-        if (length($hash->{helper}{buffer})/2 >= index($hash->{helper}{buffer}, "5c00") + $length + 6) {
-	    NIBE_ParseFrame($hash, $length, $command);
+        my $offset = index($hash->{helper}{buffer}, "5c00");
+        if ($offset > 0) {
+            # shift buffer till start of first frame
+            $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, $offset);
+            Log3 $name, 5, "$name: drop $offset characters";
         }
-    } 
-    else {
-	    $hash->{helper}{buffer} = "" if length($hash->{helper}{buffer}) > 9;
+
+        if (length($hash->{helper}{buffer})/2 >= $length + 6) {
+            # Send the ACK byte.
+            DevIo_SimpleWrite($hash, '06', 1);
+            # Parse
+            NIBE_ParseFrame($hash, $length, $command, substr($hash->{helper}{buffer}, 0, ($length+6)*2))
+                    if ($length > 0);
+            $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, ($length+6)*2);            
+        } else {
+            # not enough data yet
+            last;
+        }
     }  
 }
 
