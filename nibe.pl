@@ -2,6 +2,8 @@
 use strict;
 use Device::SerialPort;
 
+# http://search.cpan.org/~cook/Device-SerialPort-1.002/SerialPort.pm
+
 # Configuration
 my $debug = 1;							# If you want to see the RAW message please set debug=1
 my $device = "/dev/serial_heizung";		# Please define here the serial device.
@@ -18,6 +20,22 @@ $serial->parity("none");	# No parity bit
 $serial->stopbits(1);		# One Stopbit
 $serial->purge_all();		# ????
 $serial->lookclear();		# Clear all the buffers
+$serial->handshake("none");
+
+$serial->stty_icanon(0);
+$serial->stty_parmrk(0); # The debian standard install does not have it
+$serial->stty_icrnl(0);
+$serial->stty_echoe(0);
+$serial->stty_echok(0);
+$serial->stty_echoctl(0);
+
+$serial->stty_echo(0);
+$serial->stty_icanon(0);
+$serial->stty_isig(0);
+$serial->stty_opost(0);
+$serial->stty_icrnl(0);
+
+$serial->write_settings || undef $serial;
 
 # Define the basic variables
 my @daten;					# Array for storing the message
@@ -45,11 +63,6 @@ while(1) {
 		# Check if the length of the message is reached.	
 		if (0+@daten==hex($daten[4])+6) {
 
-			# Send the ACK byte.
-			my $serial_write = pack( 'H[2]', '06');
-			$serial->write($serial_write)  || die "Cant write to serial port. $^E\n";
-	        	$serial->write_drain;
-
 			# Calculate checksum
 			my $j=0;
 			my $checksum=0;
@@ -63,26 +76,36 @@ while(1) {
 
 			if ($checksum==hex($daten[@daten-1])) {
 				print " - Checksum OK\n";
+	                        # Send the ACK byte.
+        	                my $serial_write = pack( 'H[2]', '06');
+                	        $serial->write($serial_write)  || die "Cant write to serial port. $^E\n";
+                      		$serial->write_drain;
+
 			} else {
 				print " - Checksum not OK\n";
+	                        # Send the ACK byte.
+        	                my $serial_write = pack( 'H[2]', '15');
+                	        $serial->write($serial_write)  || die "Cant write to serial port. $^E\n";
+                        	$serial->write_drain;
+
 			}
 			
 			# Check if we got a message with the command 68 
 			# In this message we can expect 20 values from the heater which were defined with the help of ModbusManager
 			if ($daten[3] eq "68") {
 				my $j=5;
-				print "Found data: \n";
 				while($j <  hex($daten[4])+1) {
 					if ($daten[$j+1].$daten[$j] ne "ffff") {	
 						# Getting the register name
-						print return_register( hex($daten[$j+1].$daten[$j]),0);
-						print " ";
-					
+						#print return_register( hex($daten[$j+1].$daten[$j]),0);
+						#print " ";
+					        
+						print $daten[$j+1] . " " . $daten[$j] . " - " . $daten[$j+3] . " " . $daten[$j+2] . "\n";
+							
 						# Calculating the actual value
-						my $valuetype 	= return_register( hex($daten[$j+1].$daten[$j]),3);
-						my $factor 		= return_register( hex($daten[$j+1].$daten[$j]),4);
-						print return_normalizedvalue($valuetype,$daten[$j+3].$daten[$j+2])/$factor."\n";
-						#print " ".return_register( hex($daten[$j+1].$daten[$j]))."\n";
+						#my $valuetype 	= return_register( hex($daten[$j+1].$daten[$j]),3);
+						#my $factor 		= return_register( hex($daten[$j+1].$daten[$j]),4);
+						#print return_normalizedvalue($valuetype,$daten[$j+3].$daten[$j+2])/$factor."\n";
 						$j=$j+4;
 					} else {
 						$j=$j+4;
@@ -249,6 +272,7 @@ sub return_register {
 	43140 => ["compr. temp.","Current compressor temparture","°C","s16","10","0","0","0","R"],
 	43141 => ["compr. in power","The power delivered from the inverter to the compressor","W","u16","1","0","0","0","R"],
 	43144 => ["Compr. energy total","Total compressor energy in kWh","kWh","u32","100","0","9999999","0","R"],
+	43145 => ["Unknown"," ",,"kWh","u32","100","0","9999999","0","R"],
 	43147 => ["Compr. in current","The current delivered from the inverter to the compressor","A","s16","1","0","0","0","R"],
 	43181 => ["Chargepump speed","","","s16","1","0","0","0","R"],
 	43182 => ["Compr. freq. setpoint","The targeted compressor frequency","Hz","u16","1","0","0","0","R"],
