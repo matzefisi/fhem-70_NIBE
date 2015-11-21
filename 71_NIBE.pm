@@ -188,7 +188,7 @@ sub NIBE_Parse ($$@) {
                         }
                     }
                 }
-                readingsEndUpdate($hash, 0);
+                readingsEndUpdate($hash, 1);
                 return $name;
             }
         } else {
