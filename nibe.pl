@@ -39,7 +39,7 @@ $serial->write_settings || undef $serial;
 
 # Define the basic variables
 my @daten;					# Array for storing the message
-
+print "Initialized. Let´s go...\n";
 # Start the main queue
 while(1) {
 
@@ -97,7 +97,7 @@ while(1) {
 				while($j <  hex($daten[4])+1) {
 					if ($daten[$j+1].$daten[$j] ne "ffff") {	
 						# Getting the register name
-						#print return_register( hex($daten[$j+1].$daten[$j]),0);
+						print return_register( hex($daten[$j+1].$daten[$j]),0);
 						#print " ";
 					        
 						print $daten[$j+1] . " " . $daten[$j] . " - " . $daten[$j+3] . " " . $daten[$j+2] . "\n";
