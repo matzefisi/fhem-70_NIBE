@@ -146,7 +146,7 @@ sub NIBE_Parse ($$@) {
                 readingsBeginUpdate($hash);
     
                 my $j=5;
-                while($j < $length) {
+                while($j < $length+5) {
                     if (substr($msg,$j*2,4) =~ m/(.{2})(.{2})/) {
                         my $register = $2.$1;
                         $j += 2;
@@ -154,25 +154,41 @@ sub NIBE_Parse ($$@) {
                         if ($register ne "ffff") {    
                             # Getting the register name
                             my $reading = return_register(hex($register), 0);
+                            Log3 $name, 5, "$name: Found register $reading";
                         
                             # Calculating the actual value
                             if (defined($reading)) {
                                 my $valuetype = return_register( hex($register),3);
                                 my $factor    = return_register( hex($register),4);
                                 my $value     = "";
-                                if ($valuetype =~ m/[su](\d*)/) {
-                                    my $bytes = $1/8;
-                                    for (my $i = 0; $i < $bytes; $i++) {
-                                        my $byte = substr($msg, $j++*2, 2);
-                                        $value = $byte . $value;
-                                        # remove escaping of 0x5c
-                                        if ($byte eq "5c") {
-                                            $j++ if (substr($msg, $j*2, 2) eq "5c");
-                                        }
+                                
+                                for (my $i = 2; $i > 0; $i--) {
+                                    my $byte = substr($msg, $j++*2, 2);
+                                    $value = $byte . $value;
+                                    # remove escaping of 0x5c
+                                    if ($byte eq "5c") {
+                                        $j++ if (substr($msg, $j*2, 2) eq "5c");
                                     }
-                                } else {
-                                    Log3 $name, 3, "$name: Unsupported value size $valuetype";
                                 }
+
+                                # value type *32 uses next register for full value
+                                if ($valuetype =~ m/[su]32/ && substr($msg,$j*2,4) =~ m/(.{2})(.{2})/) {
+                                    my $next_register = $2.$1;
+                                    if (hex($next_register)-hex($register) == 1) {
+                                        $j += 2;
+
+                                        for (my $i = 2; $i > 0; $i--) {
+                                            my $byte = substr($msg, $j++*2, 2);
+                                            $value = $byte . $value;
+                                            # remove escaping of 0x5c
+                                            if ($byte eq "5c") {
+                                                $j++ if (substr($msg, $j*2, 2) eq "5c");
+                                            }
+                                        }
+
+                                    }
+                                }
+
                                 if ($value ne "") {
                                     my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
                                     readingsBulkUpdate($hash, $reading, $reading_value)
