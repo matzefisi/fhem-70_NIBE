@@ -138,13 +138,18 @@ sub NIBE_Parse ($$@) {
     
         if ($checksum==hex(substr($msg, length($msg)-2, 2))) {
             Log3 $name, 5, "$name: Checksum OK";
+
+            # used as physical dummy - don't parse
+            if (AttrVal($name, "ignore", "0") ne "0") {
+                return "";
+            }
     
+            # Start populate the reading(s)
+            readingsBeginUpdate($hash);
+
             # Check if we got a message with the command 68 
             # In this message we can expect 20 values from the heater which were defined with the help of ModbusManager
-            if ($command eq "68" and AttrVal($name, "ignore", "0") eq "0") {
-                # Populate the reading(s)
-                readingsBeginUpdate($hash);
-    
+            if ($command eq "68") {
                 my $j=5;
                 while($j < $length+5) {
                     if (substr($msg,$j*2,4) =~ m/(.{2})(.{2})/) {
@@ -191,8 +196,10 @@ sub NIBE_Parse ($$@) {
 
                                 if ($value ne "") {
                                     my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
+                                    Log3 $name, 5, "$name: Value $value normalized $reading_value";
                                     readingsBulkUpdate($hash, $reading, $reading_value)
                                             if ($reading_value ne ReadingsVal($name, $reading, ""));
+                                    check_set_state($hash, hex($register), $reading_value);
                                 }
                             } else {
                                 Log3 $name, 3, "$name: Register ".hex($register)." not defined";
@@ -204,15 +211,52 @@ sub NIBE_Parse ($$@) {
                         }
                     }
                 }
-                readingsEndUpdate($hash, 1);
-                return $name;
+            } elsif ($command eq "6d" and substr($msg, 10, 2*$length) =~ m/(.{2})(.{4})(.*)/) {
+                my $version = hex($2);
+                my $product = pack('H*', $3);
+                readingsBulkUpdate($hash, "sw_version", $version)
+                        if ($version ne ReadingsVal($name, "sw_version", ""));
+                readingsBulkUpdate($hash, "product", $product)
+                        if ($product ne ReadingsVal($name, "product", ""));
+            } else {
+              Log3 $name, 4, "$name: other message $msg";
             }
+            readingsEndUpdate($hash, 1);
+            return $name;
         } else {
             Log3 $name, 4, "$name: Checksum not OK";
             Log3 $name, 4, "$name: $msg";
         }
     }
     return "";
+}
+
+sub check_set_state {
+    my ($hash, $register, $value) = @_;
+    my $name = $hash->{NAME};
+
+    # status binary code
+    # 2⁰ - compressor
+    # 2¹ - circulation pump
+    # 2² - brine pump
+    # 2³ - shuttle valve, climate system/water heater
+    my %status = (
+        2  => "standby",
+        6  => "start/stop heating",
+        7  => "heating operation",
+        8  => "hot water standby",
+        10 => "heat transfer",
+        14 => "start/stop hot water",
+        15 => "hot water regeneration",
+    );
+
+    # PCA-Base_Relays
+    if ($register eq "43513" or $register eq "43514") {
+        my $state = $status{$value};
+        $state = $value if (!defined($state));
+        readingsBulkUpdate($hash, "state", $state)
+                if ($state ne ReadingsVal($name, "state", ""));
+    }
 }
 
 sub return_normalizedvalue {
