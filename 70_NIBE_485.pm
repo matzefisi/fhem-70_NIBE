@@ -20,7 +20,7 @@ use strict;
 use warnings;
 use Device::SerialPort;
 
-my $last_time = 1;
+my %last_time = ();
 
 sub NIBE_485_Initialize ($)
 {
@@ -233,10 +233,14 @@ sub NIBE_485_Read ($)
         DevIo_SimpleWrite($hash, '06', 1);
 
         # Parse
-        if ($length > 0 and (time() - $last_time) >= AttrVal($name, "interval", 30)) {
-            $last_time = time();
-            my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
-            NIBE_485_Parse($hash, $name, $msg);
+        if ($length > 0) {
+            my $last = $last_time{$command};
+            $last = 1 if (!defined($last));
+            if (time() - $last >= AttrVal($name, "interval", 30)) {
+                $last_time{$command} = time();
+                my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
+                NIBE_485_Parse($hash, $name, $msg);
+            }
         }
 
         $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, ($length+6)*2);            
