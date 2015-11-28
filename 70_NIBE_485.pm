@@ -230,6 +230,10 @@ sub NIBE_485_Read ($)
         last if (length($hash->{helper}{buffer})/2 < $length + 6);
 
         # Send the ACK byte.
+	
+	# Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
+	# Happens sometimes on my side (Matthias)
+
         DevIo_SimpleWrite($hash, '06', 1);
 
         # Parse
