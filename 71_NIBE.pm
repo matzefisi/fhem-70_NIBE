@@ -152,63 +152,82 @@ sub NIBE_Parse ($$@) {
             if ($command eq "68") {
                 my $j=5;
                 while($j < $length+5) {
-                    if (substr($msg,$j*2,4) =~ m/(.{2})(.{2})/) {
-                        my $register = $2.$1;
-                        $j += 2;
+                    my $register = "";
+                    for (my $i = 2; $i > 0; $i--) {
+                        my $byte = substr($msg, $j++*2, 2);
+                        $register = $byte . $register;
+                        # remove escaping of 0x5c
+                        if ($byte eq "5c") {
+                            $j++ if (substr($msg, $j*2, 2) eq "5c");
+                        }
+                    }
       
-                        if ($register ne "ffff") {    
-                            # Getting the register name
-                            my $reading = return_register(hex($register), 0);
+                    if ($register ne "" and $register ne "ffff") {    
+                        # Getting the register name
+                        my $reading = return_register(hex($register), 0);
+                    
+                        # Calculating the actual value
+                        if (defined($reading)) {
                             Log3 $name, 5, "$name: Found register $reading";
-                        
-                            # Calculating the actual value
-                            if (defined($reading)) {
-                                my $valuetype = return_register( hex($register),3);
-                                my $factor    = return_register( hex($register),4);
-                                my $value     = "";
-                                
+
+                            my $valuetype = return_register( hex($register),3);
+                            my $factor    = return_register( hex($register),4);
+                            my $value     = "";
+                            
+                            for (my $i = 2; $i > 0; $i--) {
+                                my $byte = substr($msg, $j++*2, 2);
+                                $value = $byte . $value;
+                                # remove escaping of 0x5c
+                                if ($byte eq "5c") {
+                                    $j++ if (substr($msg, $j*2, 2) eq "5c");
+                                }
+                            }
+
+                            # value type *32 uses next register for full value
+                            if ($valuetype =~ m/[su]32/) {
+                                my $next_register = "";
+                                my $has_escaping = 0;
                                 for (my $i = 2; $i > 0; $i--) {
                                     my $byte = substr($msg, $j++*2, 2);
-                                    $value = $byte . $value;
+                                    $next_register = $byte . $next_register;
                                     # remove escaping of 0x5c
                                     if ($byte eq "5c") {
                                         $j++ if (substr($msg, $j*2, 2) eq "5c");
+                                        $has_escaping++;
                                     }
                                 }
 
-                                # value type *32 uses next register for full value
-                                if ($valuetype =~ m/[su]32/ && substr($msg,$j*2,4) =~ m/(.{2})(.{2})/) {
-                                    my $next_register = $2.$1;
-                                    if (hex($next_register)-hex($register) == 1) {
-                                        $j += 2;
-
-                                        for (my $i = 2; $i > 0; $i--) {
-                                            my $byte = substr($msg, $j++*2, 2);
-                                            $value = $byte . $value;
-                                            # remove escaping of 0x5c
-                                            if ($byte eq "5c") {
-                                                $j++ if (substr($msg, $j*2, 2) eq "5c");
-                                            }
+                                if ($next_register ne "" and hex($next_register)-hex($register) == 1) {
+                                    for (my $i = 2; $i > 0; $i--) {
+                                        my $byte = substr($msg, $j++*2, 2);
+                                        $value = $byte . $value;
+                                        # remove escaping of 0x5c
+                                        if ($byte eq "5c") {
+                                            $j++ if (substr($msg, $j*2, 2) eq "5c");
                                         }
-
                                     }
-                                }
 
-                                if ($value ne "") {
-                                    my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
-                                    Log3 $name, 5, "$name: Value $value normalized $reading_value";
-                                    readingsBulkUpdate($hash, $reading, $reading_value)
-                                            if ($reading_value ne ReadingsVal($name, $reading, ""));
-                                    check_set_state($hash, hex($register), $reading_value);
+                                } else {
+                                    # revert parsing of next_register
+                                    $j -= 2;
+                                    $j-- if ($has_escaping);
                                 }
-                            } else {
-                                Log3 $name, 3, "$name: Register ".hex($register)." not defined";
-                                Log3 $name, 4, "$name: $msg";
+                            }
+
+                            if ($value ne "") {
+                                my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
+                                Log3 $name, 5, "$name: Value $value normalized $reading_value";
+                                readingsBulkUpdate($hash, $reading, $reading_value)
+                                        if ($reading_value ne ReadingsVal($name, $reading, ""));
+                                check_set_state($hash, hex($register), $reading_value);
                             }
                         } else {
-                          # skip value 0000 of register ffff
-                          $j += 2;
+                            Log3 $name, 3, "$name: Register ".hex($register)." not defined";
+                            Log3 $name, 4, "$name: $msg";
                         }
+                    } else {
+                      # skip value 0000 of register ffff
+                      $j += 2;
                     }
                 }
             } elsif ($command eq "6d" and substr($msg, 10, 2*$length) =~ m/(.{2})(.{4})(.*)/) {
