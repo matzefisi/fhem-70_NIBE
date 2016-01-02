@@ -214,7 +214,7 @@ sub NIBE_Parse ($$@) {
                                 }
                             }
 
-                            if ($value eq "ffff") {
+                            if ($value eq "8000") {
                                 Log3 $name, 3, "$name: Skip initial value of register $reading";
                             } elsif ($value ne "") {
                                 my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
