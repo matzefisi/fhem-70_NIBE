@@ -214,7 +214,9 @@ sub NIBE_Parse ($$@) {
                                 }
                             }
 
-                            if ($value ne "") {
+                            if ($value eq "ffff") {
+                                Log3 $name, 3, "$name: Skip initial value of register $reading";
+                            } elsif ($value ne "") {
                                 my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
                                 Log3 $name, 5, "$name: Value $value normalized $reading_value";
                                 readingsBulkUpdate($hash, $reading, $reading_value)
@@ -238,7 +240,7 @@ sub NIBE_Parse ($$@) {
                 readingsBulkUpdate($hash, "product", $product)
                         if ($product ne ReadingsVal($name, "product", ""));
             } else {
-              Log3 $name, 4, "$name: other message $msg";
+              Log3 $name, 3, "$name: other message $msg";
             }
             readingsEndUpdate($hash, 1);
             return $name;
