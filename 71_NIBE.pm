@@ -214,7 +214,7 @@ sub NIBE_Parse ($$@) {
                                 }
                             }
 
-                            if ($value eq "8000") {
+                            if ($valuetype =~ m/^s/ and $value =~ m/^80+$/) {
                                 Log3 $name, 3, "$name: Skip initial value of register $reading";
                             } elsif ($value ne "") {
                                 my $reading_value = return_normalizedvalue($valuetype,$value)/$factor;
@@ -1106,10 +1106,95 @@ sub return_register {
 <a name="NIBE"></a>
 <h3>NIBE</h3>
 <ul>
-  The NIBE module enables FHEM to communicate to NIBE heat pumps which are compatible to the modbus 40 module.</br>
-  You can use for example the USB IR Read and write head from volkszaehler.org project.</br>
+  Support for NIBE head pumps via <a href="NIBE_485">NIBE_485</a>.
   <br><br>
+  example configuration:
+  <ul>
+  <h4>FHEM remote (connected to NIBE heat pump)</h4>
+
+    <h5>physical module</h5>
+    <code>define NibeWP NIBE_485 /dev/ttyAMA0</code>
+
+    <h5>logical module</h5>
+    <code>define Nibe NIBE<br>
+    attr Nibe ignore 1</code>
+
+  <h4>Fhem master</h4>
+
+    <h5>physical module (dummy for FHEM2FHEM)</h5>
+    <code>define NibeWP NIBE_485 none<br>
+    attr NibeWP dummy 1</code>
+
+    <h5>FHEM2FHEM</h5>
+    <code>define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP</code>
+
+    <h5>logical module</h5>
+    <code>define Nibe NIBE</code>
+  </ul>
+  <br><br>
+  <b>Define</b>
+  <ul>
+    <code>define &lt;name&gt; NIBE</code>
+    <br><br>
+  </ul>
+  <a name="NIBEattr"></a>
+  <b>Attributes</b> 
+  <ul><b>ignore</b>
+    <ul>
+      The pasing of message from NIBE heat pump is time critical.
+      By using this attribute parsing of messages can be omitted.
+      It should be used on a remote FHEM installation.
+    </ul>
+  </ul>
 </ul>
 
 =end html
+=begin html_DE
+
+<a name="NIBE"></a>
+<h3>NIBE</h3>
+<ul>
+  Unterstützung von NIBE Wärmepumpen via <a href="NIBE_485">NIBE_485</a>.
+  <br><br>
+  Beispielkonfiguration:
+  <ul>
+  <h4>entferntes FHEM (verbunden mit einer NIBE Wärmepumpe)</h4>
+
+    <h5>physische Modul</h5>
+    <code>define NibeWP NIBE_485 /dev/ttyAMA0</code>
+
+    <h5>logisches Modul</h5>
+    <code>define Nibe NIBE<br>
+    attr Nibe ignore 1</code>
+
+  <h4>FHEM Master</h4>
+
+    <h5>physisches Modul (Dummy für FHEM2FHEM)</h5>
+    <code>define NibeWP NIBE_485 none<br>
+    attr NibeWP dummy 1</code>
+
+    <h5>FHEM2FHEM</h5>
+    <code>define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP</code>
+
+    <h5>logisches Modul</h5>
+    <code>define Nibe NIBE</code>
+  </ul>
+  <br><br>
+  <b>Define</b>
+  <ul>
+    <code>define &lt;name&gt; NIBE</code>
+    <br><br>
+  </ul>
+  <a name="NIBEattr"></a>
+  <b>Attributes</b> 
+  <ul><b>ignore</b>
+    <ul>
+      Die Verarbeitung der Nachrichten von der NIBE Wärmepumpe ist zeitkritisch.
+      Daher kann über dieses Attrbiute das Parsen der Nachrichten unterdrückt werden.
+      Es sollte auf einer entfernten FHEM Installation verwendet werden.
+    </ul>
+  </ul>
+</ul>
+
+=end html_DE
 =cut
