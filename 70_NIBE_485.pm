@@ -230,9 +230,9 @@ sub NIBE_485_Read ($)
         last if (length($hash->{helper}{buffer})/2 < $length + 6);
 
         # Send the ACK byte.
-	
-	# Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
-	# Happens sometimes on my side (Matthias)
+
+        # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
+        # Happens sometimes on my side (Matthias)
 
         DevIo_SimpleWrite($hash, '06', 1);
 
@@ -278,13 +278,61 @@ sub NIBE_485_Ready
 =pod
 =begin html
 
-<a name="NIBE"></a>
-<h3>NIBE</h3>
+<a name="NIBE_485"></a>
+<h3>NIBE_485</h3>
 <ul>
-  The NIBE module enables FHEM to communicate to NIBE heat pumps which are compatible to the modbus 40 module.</br>
-  You can use for example the USB IR Read and write head from volkszaehler.org project.</br>
+  The NIBE 485 module enables communication between FHEM and NIBE heat pumps.
+  The FHEM module simulates a NIBE MODBUS 40 communication module.
+  The connection between FHEM and heat pump is implemented by using communication standard RS485.
+  For further information how to install connection consult NIBE MODBUS 40 installer manual.
+  <br>
+  This module is a physical module for direct communication to NIBE heat pumps.
+  The description of logical module <a href="#NIBE">NIBE</a>
+  contains further information including an example configuration.
   <br><br>
+  
+  <b>Define</b>
+  <ul>
+    <code>define &lt;name&gt; NIBE_485 &lt;devicename&gt;</code>
+    <br><br>
+    Devicename has to be <code>none</code> if used by <a href="#FHEM2FHEM">FHEM2FHEM</a> as dummy. 
+    <br><br>
+  </ul>
+  <a name="NIBE_485attr"></a>
+  <b>Attributes</b> 
+  <ul><b>dummy</b>
+    <ul>can be used to define as RAW device using <a href="#FHEM2FHEM">FHEM2FHEM</a></ul>
+  </ul>
 </ul>
 
 =end html
+=begin html_DE
+
+<a name="NIBE_485"></a>
+<h3>NIBE_485</h3>
+<ul>
+  Das NIBE 485 Modul ermöglicht die Kommunikation von FHEM mit einer NIBE Wärmepumpe.
+  Dabei wird durch das FHEM Modul ein NIBE MODBUS 40 Gerät simuliert.
+  Für die Verbindung zwischen FHEM und der Wärmepumpe wird der Kommunikationsstandard RS485 genutzt.
+  Der Anschluß an der Wärmepumpe erfolgt gemäß des Installateurhandbuches des NIBE MODBUS 40.
+  <br>
+  Das ist ein physisches Modul zur direkten Kommunikation mit einer NIBE Wärmepumpe.
+  Weitere Informationen mit Beispielkonfiguration sind beim logischen Modul <a href="#NIBE">NIBE</a> zu finden.
+  <br><br>
+  
+  <b>Define</b>
+  <ul>
+    <code>define &lt;name&gt; NIBE_485 &lt;devicename&gt;</code>
+    <br><br>
+    Bei Benutzung als <a href="#FHEM2FHEM">FHEM2FHEM</a> Dummy muss als Gerätename <code>none</code> verwendet werden.
+    <br><br>
+  </ul>
+  <a name="NIBE_485attr"></a>
+  <b>Attributes</b> 
+  <ul><b>dummy</b>
+    <ul>kann gesetzt werden, um das Gerät als <a href="#FHEM2FHEM">FHEM2FHEM</a> RAW-Objekt zu benutzen</ul>
+  </ul>
+</ul>
+
+=end html_DE
 =cut
