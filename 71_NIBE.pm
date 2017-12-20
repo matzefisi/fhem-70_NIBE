@@ -408,6 +408,7 @@ sub return_register {
 	40156 => ["EQ1-BT75_Heatdump_temp.","Heating medium dump temperature for ACS","°C","s16","10","0","0","0","R"],
 	40157 => ["EP30-BT53_Solar_Panel_Temp","","°C","s16","10","0","0","0","R"],
 	40158 => ["EP30-BT54_Solar_Load_Temp","","°C","s16","10","0","0","0","R"],
+	40940 => ["Degree Minutes (32 bit)","Degree minutes, 32bit value. Full resolution.","","s32","10","-30000","30000","0","R/W"],
 	43001 => ["Software_version","","","u16","1","0","0","0","R"],
 	43005 => ["Degree_Minutes","","","s16","10","-30000","30000","0","R/W"],
 	43006 => ["Calculated_Supply_Temperature_S4","","°C","s16","10","0","0","0","R"],
