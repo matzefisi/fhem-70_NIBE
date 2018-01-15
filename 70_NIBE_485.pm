@@ -189,8 +189,10 @@ sub NIBE_485_Get ($) {
 #Just a short queue to print out the content of the hash.
 	my ($hash) = @_;
 	my $name = $hash->{NAME};
-	while ( my($k,$v) = each $hash ) {
-		Log3 $name, 5, "$k => $v";
+	while ( my($k,$v) = each %$hash ) {
+		if (defined($v)) {
+			Log3 $name, 5, "$k => $v";
+		}
 	}
 }
 
@@ -214,12 +216,13 @@ sub NIBE_485_Read ($)
     Log3 $name, 5, "$name: raw read: " . unpack ('H*', $buf);
 
     $hash->{helper}{buffer} .= unpack ('H*', $buf);
-    while ($hash->{helper}{buffer} =~ m/5c00(.{2})(.{2})(.{2}).*/) {
-        my $address = $1;
-        my $command = $2;
-        my $length  = hex($3);
-        
-        my $offset = index($hash->{helper}{buffer}, "5c00");
+    while ($hash->{helper}{buffer} =~ m/5c(00|41)(.{2})(.{2})(.{2}).*/) {
+    	    my $sender  = $1; 
+        my $address = $2;
+        my $command = $3;
+        my $length  = hex($4);
+
+        my $offset = index($hash->{helper}{buffer}, "5c$sender");
         if ($offset > 0) {
             # shift buffer till start of first frame
             $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, $offset);
@@ -237,7 +240,7 @@ sub NIBE_485_Read ($)
         DevIo_SimpleWrite($hash, '06', 1);
 
         # Parse
-        if ($length > 0) {
+        if ($sender eq "00" and $length > 0) {
             my $last = $last_time{$command};
             $last = 1 if (!defined($last));
             if (time() - $last >= AttrVal($name, "interval", 30)) {
