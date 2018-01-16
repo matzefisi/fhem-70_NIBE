@@ -217,7 +217,7 @@ sub NIBE_485_Read ($)
 
     $hash->{helper}{buffer} .= unpack ('H*', $buf);
     while ($hash->{helper}{buffer} =~ m/5c(00|41)(.{2})(.{2})(.{2}).*/) {
-    	    my $sender  = $1; 
+        my $sender  = $1; 
         my $address = $2;
         my $command = $3;
         my $length  = hex($4);
@@ -237,7 +237,7 @@ sub NIBE_485_Read ($)
         # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
         # Happens sometimes on my side (Matthias)
 
-        DevIo_SimpleWrite($hash, '06', 1);
+        DevIo_SimpleWrite($hash, '06', 1) if ($sender eq "00");
 
         # Parse
         if ($sender eq "00" and $length > 0) {
