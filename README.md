@@ -1,3 +1,11 @@
+Prerequisite
+------------
+
+- Export from NIBE ModbusManager
+  - Select model in menu Models
+  - Goto File / Export to file
+  - Put the file into the directory defined in device "global" attribute "modpath" or use attribute "modbusFile" in the logical module at Fhem master
+
 Fhem remote (connected to Nibe)
 -------------------------------
 
@@ -21,3 +29,4 @@ define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
 
 - logical module<br>
 define Nibe NIBE
+attr NIBE modbusFile <absolute file path>   &lt;-- optional, default <global-modpath>/export.csv
