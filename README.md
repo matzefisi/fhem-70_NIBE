@@ -28,5 +28,5 @@ attr NibeWP dummy 1
 define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
 
 - logical module<br>
-define Nibe NIBE
+define Nibe NIBE<br>
 attr NIBE modbusFile <absolute file path>   &lt;-- optional, default <global-modpath>/export.csv
