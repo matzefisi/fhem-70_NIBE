@@ -40,6 +40,7 @@ sub NIBE_485_Initialize ($)
 	$hash->{GetFn}      = "NIBE_485_Get";				# Manually get data
 	$hash->{ParseFn}    = "NIBE_485_Parse";				# Parse function - Only used for two step modules?
 	$hash->{StateFn}    = "NIBE_485_SetState";			# Only used for setting the state of the module?
+	$hash->{WriteFn}    = "NIBE_485_Write";      # Write data from logical module
 	# $hash->{Match}      = ".*";						# ???????????????????
 	$hash->{AttrList}   = "do_not_notify:1,0 ".
 	       "dummy:1,0 disable:0,1 interval";		                # Define the possible Attributes
@@ -74,6 +75,7 @@ sub NIBE_485_Define ($)
     }
 
 	$hash->{DeviceName}   = $dev;
+	$hash->{helper}{register} = [()];
 
 	Log3 $hash, 5, "NIBE_485: Defined";
 
@@ -232,22 +234,30 @@ sub NIBE_485_Read ($)
         # check if not enough data yet
         last if (length($hash->{helper}{buffer})/2 < $length + 6);
 
-        # Send the ACK byte.
+        if ($sender eq "00" and $command eq "69" and scalar @{$hash->{helper}{register}} > 0) {
 
-        # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
-        # Happens sometimes on my side (Matthias)
-
-        DevIo_SimpleWrite($hash, '06', 1) if ($sender eq "00");
-
-        # Parse
-        if ($sender eq "00" and $length > 0) {
-            my $last = $last_time{$command};
-            $last = 1 if (!defined($last));
-            if (time() - $last >= AttrVal($name, "interval", 30)) {
-                $last_time{$command} = time();
-                my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
-                NIBE_485_Parse($hash, $name, $msg);
-            }
+          my $reg = shift(@{$hash->{helper}{register}});
+          DevIo_SimpleWrite($hash, $reg, 1);
+          Log3 $name, 5, "$name: raw write: $reg";
+          
+        } else {
+          # Send the ACK byte.
+  
+          # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
+          # Happens sometimes on my side (Matthias)
+  
+          DevIo_SimpleWrite($hash, '06', 1);
+  
+          # Parse
+          if ($sender eq "00" and $length > 0) {
+              my $last = $last_time{$command};
+              $last = 1 if (!defined($last));
+              if ($command eq "6a" or time() - $last >= AttrVal($name, "interval", 30)) {
+                  $last_time{$command} = time();
+                  my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
+                  NIBE_485_Parse($hash, $name, $msg);
+              }
+          }
         }
 
         $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, ($length+6)*2);            
@@ -272,6 +282,41 @@ sub NIBE_485_Ready
   my ($hash) = @_;
   return DevIo_OpenDev($hash, 0, "NIBE_485_DoInit")
 	if($hash->{STATE} eq "disconnected");
+}
+
+sub NIBE_485_Write($$) {
+  my ( $hash, @args) = @_;
+  my $name = $hash->{NAME};
+
+  Log3 $name, 5, "$name: Request input ".join(', ', @args);
+
+  my $opt = shift @args;
+  if ($opt eq "read") {
+    foreach my $r (@args) {
+      my @a = ();
+      push(@a, 'C0');
+      push(@a, '69');
+      push(@a, '02');
+      my $reg = sprintf("%X", $r);
+      if ($reg =~ /(.{2})(.{2})/) {
+        push(@a, $2);
+        push(@a, $1);
+      }
+      my $c = pack('h*', '00');
+      foreach my $h (@a) {
+        $c ^= pack('h*', $h);
+      }
+      my $checksum = unpack('h*', $c);
+      $checksum = 'c5' if ($checksum eq '5c');
+      push(@a, $checksum);
+      
+      my $command = join('', @a);
+      push(@{$hash->{helper}{register}}, $command);
+      Log3 $name, 4, "$name: Request command $command";
+    }
+  }
+
+  return;
 }
 	
 #NIBE_485_Notify (falls man benachrichtigt werden will)
