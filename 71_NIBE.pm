@@ -222,7 +222,7 @@ sub NIBE_Parse ($$@) {
                 }
             # Check if we got a message with the command 6a - request for single value
             } elsif ($command eq "6a") {
-              NIBE_ParseRegister($hash, $msg, 5);
+              NIBE_ParseSingleRegister($hash, $msg, 5);
             } elsif ($command eq "6d" and substr($msg, 10, 2*$length) =~ m/(.{2})(.{4})(.*)/) {
                 my $version = hex($2);
                 my $product = pack('H*', $3);
@@ -340,6 +340,76 @@ sub NIBE_ParseRegister($$$) {
   }
   
   return $j;
+}
+
+sub NIBE_ParseSingleRegister($$$) {
+  my ($hash, $msg, $j) = @_;
+  my $name = $hash->{NAME};
+
+  my $register = "";
+  for ( my $i = 2 ; $i > 0 ; $i-- ) {
+    my $byte = substr( $msg, $j++ * 2, 2 );
+    $register = $byte . $register;
+
+    # remove escaping of 0x5c
+    if ( $byte eq "5c" ) {
+      $j++ if ( substr( $msg, $j * 2, 2 ) eq "5c" );
+    }
+  }
+  if ( $register ne "" and $register ne "ffff" ) {
+
+    # Getting the register name
+    my $regHash = $hash->{register}{ hex($register) };
+    my $reading = $regHash->{name};
+
+    # Calculating the actual value
+    if ( defined($reading) ) {
+      Log3 $name, 5, "$name: Found register $reading";
+
+      my $valuetype = $regHash->{type};
+      my $factor    = $regHash->{factor};
+      my $value     = "";
+
+      for ( my $i = 2 ; $i > 0 ; $i-- ) {
+        my $byte = substr( $msg, $j++ * 2, 2 );
+        $value = $byte . $value;
+
+        # remove escaping of 0x5c
+        if ( $byte eq "5c" ) {
+          $j++ if ( substr( $msg, $j * 2, 2 ) eq "5c" );
+        }
+      }
+
+      # value type *32
+      if ( $valuetype =~ m/[su]32/ ) {
+        for ( my $i = 2 ; $i > 0 ; $i-- ) {
+          my $byte = substr( $msg, $j++ * 2, 2 );
+          $value = $byte . $value;
+
+          # remove escaping of 0x5c
+          if ( $byte eq "5c" ) {
+            $j++ if ( substr( $msg, $j * 2, 2 ) eq "5c" );
+          }
+        }
+      }
+
+      if ( $valuetype =~ m/^s/ and $value =~ m/^80+$/ ) {
+        Log3 $name, 3, "$name: Skip initial value of register $reading";
+      }
+      elsif ( $value ne "" ) {
+        my $reading_value =
+          NIBE_NormalizedValue( $valuetype, $value ) / $factor;
+        Log3 $name, 5, "$name: Value $value normalized $reading_value";
+        readingsBulkUpdate( $hash, $reading, $reading_value )
+          if ( $reading_value ne ReadingsVal( $name, $reading, "" ) );
+        NIBE_CheckSetState( $hash, hex($register), $reading_value );
+      }
+    }
+    else {
+      Log3 $name, 3, "$name: Register " . hex($register) . " not defined";
+      Log3 $name, 4, "$name: $msg";
+    }
+  }
 }
 
 sub NIBE_NormalizedValue($$) {
