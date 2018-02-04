@@ -131,10 +131,25 @@ sub NIBE_Get ($$@) {
 
 #Just a short queue to print out the content of the hash.
 	my ( $hash, $name, $opt, @args ) = @_;
+
+  Log3 $name, 5, "$name: called function NIBE_Get()";
+
 	
 	if ($opt eq "register") {
-	  IOWrite($hash, "read", join(' ',@args));
+    return "argument is missing" if ( int(@args) < 1 );
+    my $message = "";
+    foreach my $arg (@args) {
+      if ($arg =~ m/^\d{5}$/) {
+        $message .= "$arg ";
+      } else {
+        my $reg = NIBE_RegisterId($hash, $arg);
+        $message .= "$reg " if (defined($reg));
+      }
+    }
+    Log3 $name, 5, "$name: Register list: $message";
+	  IOWrite($hash, "read", $message) if ($message ne "");
 	  return undef;
+
 	} elsif ($opt eq "readRegisters") {
     my $readList = "<html>";
     foreach my $reg ( sort(keys %{ $hash->{register} } ) ) {
@@ -146,6 +161,7 @@ sub NIBE_Get ($$@) {
     }
 	  $readList .= "</html>";
 	  return $readList;
+
   } elsif ($opt eq "writeRegisters") {
     my $writeList = "<html>";
     foreach my $reg ( sort(keys %{ $hash->{register} } ) ) {
@@ -466,6 +482,20 @@ sub NIBE_CheckSetState($$$) {
     }
 }
 
+sub NIBE_RegisterId($$) {
+  my ($hash, $register) = @_;
+  my $name = $hash->{NAME};
+  
+  return undef if (!defined($hash->{register}));
+  
+  while (my ($key, $value) = each (%{$hash->{register}})) {
+    return $key if ($value->{name} eq $register);
+  }
+  
+  Log3 $name, 3, "$name: Register $register not found";
+  return undef;
+}
+
 sub NIBE_LoadRegister($) {
   my ($hash) = @_;
   my $name = $hash->{NAME};
@@ -519,11 +549,7 @@ sub NIBE_LoadRegister($) {
         $description .= ";$1";
       }
     }
-    $name =~ s/^\s+//;
-    $name =~ s/\s+$//;
-    $name =~ s/\s/_/g;
-    $name =~ s/,/./g;
-    $hash->{register}{$field[2+$offset]}{name}        = $name;
+    $hash->{register}{$field[2+$offset]}{name}        = makeReadingName($name);
     $hash->{register}{$field[2+$offset]}{description} = $description;
     $hash->{register}{$field[2+$offset]}{type}        = $field[4+$offset];
     $hash->{register}{$field[2+$offset]}{factor}      = $field[5+$offset];
@@ -544,6 +570,16 @@ sub NIBE_LoadRegister($) {
   <br><br>
   example configuration:
   <ul>
+  <h4>Prerequisite</h4>
+
+    <h5>Export from NIBE ModbusManager</h5>
+    <ul>
+      <li>Select model in menu Models</li>
+      <li>Goto File / Export to file</li>
+      <li>Put the file into the directory defined in device "global" attribute "modpath"
+          or use attribute "modbusFile" in the logical module at Fhem master</li>
+    </ul>
+
   <h4>FHEM remote (connected to NIBE heat pump)</h4>
 
     <h5>physical module</h5>
@@ -571,13 +607,44 @@ sub NIBE_LoadRegister($) {
     <code>define &lt;name&gt; NIBE</code>
     <br><br>
   </ul>
+  <a name="NIBEget"></a>
+  <b>Get</b> 
+  <ul><b>register</b>
+    <ul>
+      Requests a register value from the heat pump. The register could be addressed by its <em>Id</em> or <em>Reading</em>.
+    </ul>
+  </ul>
+  <ul><b>readRegister</b>
+    <ul>
+      The list of all loaded register information.
+    </ul>
+  </ul>
+  <ul><b>writeRegister</b>
+    <ul>
+      The list of all loaded register information which support write access.
+    </ul>
+  </ul>
+  <a name="NIBEset"></a>
+  <b>Set</b> 
+  <ul><b>loadModbusFile</b>
+    <ul>
+      Loads register information from file, see attribute <a href=#NIBEmodbusFile>modbusFile</a>.
+    </ul>
+  </ul>
   <a name="NIBEattr"></a>
   <b>Attributes</b> 
   <ul><b>ignore</b>
     <ul>
-      The pasing of message from NIBE heat pump is time critical.
+      The parsing of messages from NIBE heat pump is time critical.
       By using this attribute parsing of messages can be omitted.
       It should be used on a remote FHEM installation.
+    </ul>
+  </ul>
+  <ul><a name="NIBEmodbusFile"></a><b>modbusFile</b>
+    <ul>
+      The absolute path to file containing register mapping exported from Nibe Modbus Manager.
+      Without this attribute the module looks for file <code>export.cvs</code> in the directory
+      defined by device <code>global</code> attribute <code>modpath</code>.
     </ul>
   </ul>
 </ul>
