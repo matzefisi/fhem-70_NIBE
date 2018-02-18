@@ -19,6 +19,8 @@ package main;
 use strict;
 use warnings;
 
+use Scalar::Util qw(looks_like_number);
+
 sub NIBE_Initialize ($)
 {
 #(initialisiert das Modul und gibt die Namen der zusätzlichen Funktionen bekannt)
@@ -37,6 +39,7 @@ sub NIBE_Initialize ($)
 	$hash->{AttrList}   = "IODev o_not_notify:1,0 ".
             "ignore:1,0 dummy:1,0 showtime:1,0 ".
             "modbusFile:textField ".
+            "nibeFavorites:textField ".
             "$readingFnAttributes";		            # Define the possible Attributes
 }
 
@@ -92,33 +95,42 @@ sub NIBE_Set ($)
 # We need this eventually later when we try to send messages to the heatpump.
 # Usecase: Reduce ventilation speed when the wood stove is heating up
 
-	#http://elektronikforumet.com/forum/viewtopic.php?f=4&t=13714&sid=34bc49f6c5651c1464df383af2906265&start=165
-	#sendBuffer[0] = 0x01; // To the master address 1
-	#sendBuffer[1] = 0x10; // Write command
-	#sendBuffer[2] = 0xB7; // High byte address register
-	#sendBuffer[3] = 0xA3; // Low byte address register
-	#sendBuffer[4] = 0x00; // Number of register to write high byte
-	#sendBuffer[5] = 0x01; // Number of register to write low byte
-	#sendBuffer[6] = 0x02; // Number of following bytes
-	#tempshort = short.Parse(textBox29.Text);
-	#shortBuffer = BitConverter.GetBytes(tempshort);
-	#sendBuffer[7] = shortBuffer[1]; // Value to set, high byte
-	#sendBuffer[8] = shortBuffer[0]; // Value to set, low byte
-	#CRC = ModRTU_CRC(sendBuffer, 9);
-	#sendBuffer[9] = (byte)CRC;
-	#sendBuffer[10] = (byte)(CRC / 256);
+  my ( $hash, $name, $cmd, @a ) = @_;
 
-  my ( $hash, @a ) = @_;
-  my $name  = $hash->{NAME};
+  return "\"set $name\" needs at least one argument" unless(defined($cmd));
 
   Log3 $name, 5, "$name: called function NIBE_Set()";
 
-  return "No Argument given" if ( !defined( $a[1] ) );
-
-  my $usage = "loadModbusFile:noArg";
+  my $usage = "loadModbusFile:noArg register test";
+  foreach my $fav (split(" ", AttrVal($name, "nibeFavorites", ""))) {
+    $usage .= " $fav" if (NIBE_CheckWriteMode($hash, NIBE_RegisterId($hash, $fav), 1));
+  }
   
-  if ($a[1] eq "loadModbusFile") {
+  if ($cmd eq "loadModbusFile") {
     NIBE_LoadRegister($hash);
+
+  } elsif ($cmd eq "register") {
+    return "No argument given" unless(defined($a[1]));
+
+    my $register = $a[0];
+    $register = NIBE_RegisterId($hash, $register) if ($register !~ m/^\d{5}$/);
+    $register = NIBE_CheckWriteMode($hash, $register);
+
+    if (defined($register)) {
+      return "$a[1] is not a number" unless looks_like_number($a[1]);
+      my $command = NIBE_WriteCommand($hash, $register, $a[1]);
+      IOWrite($hash, "write", $command);
+      NIBE_Get($hash, $name, $cmd, $register);
+    }
+    return undef;
+
+  } elsif (defined($a[0]) and my $reg = NIBE_RegisterId($hash, $cmd)) {
+    return "$a[0] is not a number" unless looks_like_number($a[0]);
+    return "Register $cmd is not adjustable" unless NIBE_CheckWriteMode($hash, $reg);
+    my $command = NIBE_WriteCommand($hash, $reg, $a[0]);
+    IOWrite($hash, "write", $command);
+    NIBE_Get($hash, $name, "register", $reg);
+    
   } else {
     return $usage;
   }
@@ -128,29 +140,12 @@ sub NIBE_Set ($)
 
 sub NIBE_Get ($$@) {
 #(wird beim Befehl get aufgerufen um Daten vom Gerät abzufragen)
-
-#Just a short queue to print out the content of the hash.
 	my ( $hash, $name, $opt, @args ) = @_;
 
   Log3 $name, 5, "$name: called function NIBE_Get()";
 
 	
-	if ($opt eq "register") {
-    return "argument is missing" if ( int(@args) < 1 );
-    my $message = "";
-    foreach my $arg (@args) {
-      if ($arg =~ m/^\d{5}$/) {
-        $message .= "$arg ";
-      } else {
-        my $reg = NIBE_RegisterId($hash, $arg);
-        $message .= "$reg " if (defined($reg));
-      }
-    }
-    Log3 $name, 5, "$name: Register list: $message";
-	  IOWrite($hash, "read", $message) if ($message ne "");
-	  return undef;
-
-	} elsif ($opt eq "readRegisters") {
+	if ($opt eq "readRegisters") {
     my $readList = "<html>";
     foreach my $reg ( sort(keys %{ $hash->{register} } ) ) {
       my $name = $hash->{register}{$reg}->{name};
@@ -175,11 +170,80 @@ sub NIBE_Get ($$@) {
     }
     $writeList .= "</html>";
     return $writeList;
+
+  } elsif ($opt eq "register") {
+    return "argument is missing" if ( int(@args) < 1 );
+    my @commands = ();
+    foreach my $arg (@args) {
+      if ($arg =~ m/^\d{5}$/) {
+        push(@commands, NIBE_ReadCommand($hash, $arg));
+      } else {
+        my $reg = NIBE_RegisterId($hash, $arg);
+        push(@commands, NIBE_ReadCommand($hash, $reg)) if (defined($reg));
+      }
+    }
+	  IOWrite($hash, "read", @commands) if (@commands);
+	  return undef;
+
+	} elsif (my $reg = NIBE_RegisterId($hash, $opt)) {
+    IOWrite($hash, "read", NIBE_ReadCommand($hash, $reg));
+    return undef;
 	}
 
 	my $usage = "register readRegisters:noArg writeRegisters:noArg";
+	foreach my $fav (split(" ", AttrVal($name, "nibeFavorites", ""))) {
+	  $usage .= " $fav:noArg";
+	}
 
   return "Unknown argument $opt, choose one of $usage";
+}
+
+sub NIBE_ReadCommand($$) {
+  my ($hash, $reg) = @_;
+  my $name = $hash->{NAME};
+  my @a = ();
+
+  push(@a, 'C0');
+  push(@a, '69');
+  push(@a, '02');
+  my $r = sprintf("%04X", $reg);
+  if ($r =~ /(.{2})(.{2})/) {
+    push(@a, $2);
+    push(@a, $1);
+  }
+  push(@a, NIBE_Checksum(@a));
+  
+  my $cmd = join('', @a);
+  Log3 $name, 4, "$name: Read command: $cmd";
+  return $cmd;
+}
+
+sub NIBE_WriteCommand($$$) {
+  my ($hash, $reg, $value) = @_;
+  my $name = $hash->{NAME};
+  my $register = $hash->{register}{$reg};
+  my @a = ();
+
+  push(@a, 'C0');
+  push(@a, '6B');
+  push(@a, '06');
+  my $r = sprintf("%04X", $reg);
+  if ($r =~ /(.{2})(.{2})/) {
+    push(@a, $2);
+    push(@a, $1);
+  }
+  my $v = NIBE_HexValue($register->{type}, $value * $register->{factor});
+  if ($v =~ /(.{2})(.{2})(.{2})(.{2})/) {
+    push(@a, $4);
+    push(@a, $3);
+    push(@a, $2);
+    push(@a, $1);
+  }
+  push(@a, NIBE_Checksum(@a));
+
+  my $cmd = join('', @a);
+  Log3 $name, 4, "$name: Write command: $cmd";
+  return $cmd;
 }
 
 #sub NIBE_Attr ($) {
@@ -239,6 +303,8 @@ sub NIBE_Parse ($$@) {
             # Check if we got a message with the command 6a - request for single value
             } elsif ($command eq "6a") {
               NIBE_ParseSingleRegister($hash, $msg, 5);
+            } elsif ($command eq "6c" and $msg eq "5c00206c01014c") {
+              # ignore, seems to be a confirmation of an executed command
             } elsif ($command eq "6d" and substr($msg, 10, 2*$length) =~ m/(.{2})(.{4})(.*)/) {
                 my $version = hex($2);
                 my $product = pack('H*', $3);
@@ -430,28 +496,55 @@ sub NIBE_ParseSingleRegister($$$) {
 
 sub NIBE_NormalizedValue($$) {
 	# Helper for normalizing the value
-	#s16, #s32, #u16, u8, #u32, #s8
+	# s8, s16, s32, u8, u16, u32
 	my ($type, $value) = @_;
+
 	if ($type eq "s8") {
-	    return 0 if $value !~ /^(00)?[0-9A-Fa-f]{1,2}$/;
+    return 0 if $value !~ /^(00)?[0-9A-Fa-f]{1,2}$/;
 		my $num = hex($value);
 		return $num >> 7 ? $num - 2 ** 8 : $num;
-	}
-	elsif ($type eq "s16") {
+
+	} elsif ($type eq "s16") {
 		return 0 if $value !~ /^[0-9A-Fa-f]{1,4}$/;
 		my $num = hex($value);
 		return $num >> 15 ? $num - 2 ** 16 : $num;
-	}
-	elsif ($type eq "s32") {
+
+	}	elsif ($type eq "s32") {
 		return 0 if $value !~ /^[0-9A-Fa-f]{1,8}$/;
 		my $num = hex($value);
 		return $num >> 31 ? $num - 2 ** 32 : $num;
-	}
-	else {
-		# To be done!
-		# Lazy replacement for U8 -> U32
+
+	}	else {
+		# Lazy replacement for u8 -> u32
 		return hex($value);
 	}
+}
+
+sub NIBE_HexValue($$) {
+  # Helper for calculate hexadecimal value
+  # s8, s16, s32, u8, u16, u32
+  my ($type, $value) = @_;
+
+  my $num = $value;
+  if ($value < 0) {
+    $num = $value + (1 << 8)  if ($type eq "s8");
+    $num = $value + (1 << 16) if ($type eq "s16");
+    $num = $value + (1 << 32) if ($type eq "s32");
+  } 
+  return sprintf("%08X", $num);
+}
+
+sub NIBE_Checksum(@) {
+  my @a = @_;
+
+  my $c = pack( 'h*', '00' );
+  foreach my $h (@a) {
+    $c ^= pack( 'h*', $h );
+  }
+  my $checksum = unpack( 'h*', $c );
+  $checksum = 'c5' if ( $checksum eq '5c' );
+
+  return $checksum;
 }
 
 sub NIBE_CheckSetState($$$) {
@@ -482,12 +575,29 @@ sub NIBE_CheckSetState($$$) {
     }
 }
 
+sub NIBE_CheckWriteMode($$;$) {
+  my ($hash, $register, $silent) = @_;
+  my $name = $hash->{NAME};
+  
+  return undef if (!defined($hash->{register}));
+
+  my $reg = $hash->{register}{$register};
+  if (defined($reg)) {
+    return $register if ($reg->{mode} eq "R/W");
+    Log3 $name, 3, "$name: Register $register is not adjustable" unless $silent;
+  } else {
+    Log3 $name, 3, "$name: Register $register not found";
+  }
+  return undef;
+}
+
 sub NIBE_RegisterId($$) {
   my ($hash, $register) = @_;
   my $name = $hash->{NAME};
   
-  return undef if (!defined($hash->{register}));
-  
+  return undef if ($register eq "?" or !defined($hash->{register}));
+
+  keys %{$hash->{register}}; #reset iterator used by each
   while (my ($key, $value) = each (%{$hash->{register}})) {
     return $key if ($value->{name} eq $register);
   }
@@ -608,43 +718,62 @@ sub NIBE_LoadRegister($) {
     <br><br>
   </ul>
   <a name="NIBEget"></a>
-  <b>Get</b> 
-  <ul><b>register</b>
+  <b>Get</b>
+  <ul>
+    <code>get &lt;name&gt; &lt;option&gt;</code>
+    <br><br>
+    See <a href="http://fhem.de/commandref.html#get">commandref#get</a> for more info about 
+    the get command.
+    <br><br>
+    Options:
     <ul>
-      Requests a register value from the heat pump. The register could be addressed by its <em>Id</em> or <em>Reading</em>.
-    </ul>
-  </ul>
-  <ul><b>readRegister</b>
-    <ul>
-      The list of all loaded register information.
-    </ul>
-  </ul>
-  <ul><b>writeRegister</b>
-    <ul>
-      The list of all loaded register information which support write access.
+      <li><i>register</i> &lt;Id/Reading&gt;<br>
+          Requests a register value from the heat pump. The register could be addressed by its <em>Id</em> or <em>Reading</em>.
+      </li>
+      <li><i>readRegister</i><br>
+          The list of all loaded register information.
+      </li>
+      <li><i>writeRegister</i><br>
+          The list of all loaded register information which support write access.
+      </li>
     </ul>
   </ul>
   <a name="NIBEset"></a>
   <b>Set</b> 
-  <ul><b>loadModbusFile</b>
+  <ul>
+    <code>set &lt;name&gt; &lt;option&gt; &lt;value&gt;</code>
+    <br><br>
+    You can <i>set</i> any value to any of the following options.
+    See <a href="http://fhem.de/commandref.html#set">commandref#set</a> 
+    for more info about the set command.
+    <br><br>
+    Options:
     <ul>
-      Loads register information from file, see attribute <a href=#NIBEmodbusFile>modbusFile</a>.
+      <li><i>loadModbusFile</i><br>
+          Loads register information from file, see attribute <a href=#NIBEmodbusFile>modbusFile</a>.
+      </li>
     </ul>
   </ul>
   <a name="NIBEattr"></a>
-  <b>Attributes</b> 
-  <ul><b>ignore</b>
+  <b>Attributes</b>
+  <ul>
+    <code>attr &lt;name&gt; &lt;attribute&gt; &lt;value&gt;</code>
+    <br><br>
+    See <a href="http://fhem.de/commandref.html#attr">commandref#attr</a> for more info about 
+    the attr command.
+    <br><br>
+    Attributes:
     <ul>
-      The parsing of messages from NIBE heat pump is time critical.
-      By using this attribute parsing of messages can be omitted.
-      It should be used on a remote FHEM installation.
-    </ul>
-  </ul>
-  <ul><a name="NIBEmodbusFile"></a><b>modbusFile</b>
-    <ul>
-      The absolute path to file containing register mapping exported from Nibe Modbus Manager.
-      Without this attribute the module looks for file <code>export.cvs</code> in the directory
-      defined by device <code>global</code> attribute <code>modpath</code>.
+      <li><i>ignore</i> 0|1<br>
+          The parsing of messages from NIBE heat pump is time critical.
+          By using this attribute parsing of messages can be omitted.
+          It should be used on a remote FHEM installation.
+      </li>
+      <li><a name="NIBEmodbusFile"></a><i>modbusFile</i> &lt;file&gt;<br>
+          The absolute path to file containing register mapping exported from Nibe Modbus Manager.
+          Without this attribute the module looks for file <code>export.cvs</code> in the directory
+          defined by device <code>global</code> attribute <code>modpath</code>.
+      </li>
     </ul>
   </ul>
 </ul>
