@@ -240,6 +240,12 @@ sub NIBE_485_Read ($)
           DevIo_SimpleWrite($hash, $reg, 1);
           Log3 $name, 5, "$name: raw write: $reg";
           
+        } elsif ($sender eq "00" and $command eq "6b" and scalar @{$hash->{helper}{register_write}} > 0) {
+
+          my $reg = shift(@{$hash->{helper}{register_write}});
+          DevIo_SimpleWrite($hash, $reg, 1);
+          Log3 $name, 5, "$name: raw write: $reg";
+          
         } else {
           # Send the ACK byte.
   
@@ -284,7 +290,7 @@ sub NIBE_485_Ready
 	if($hash->{STATE} eq "disconnected");
 }
 
-sub NIBE_485_Write($$) {
+sub NIBE_485_Write($@) {
   my ( $hash, @args) = @_;
   my $name = $hash->{NAME};
 
@@ -292,33 +298,19 @@ sub NIBE_485_Write($$) {
 
   my $opt = shift @args;
   if ($opt eq "read") {
-    foreach my $r (@args) {
-      my @a = ();
-      push(@a, 'C0');
-      push(@a, '69');
-      push(@a, '02');
-      my $reg = sprintf("%X", $r);
-      if ($reg =~ /(.{2})(.{2})/) {
-        push(@a, $2);
-        push(@a, $1);
-      }
-      my $c = pack('h*', '00');
-      foreach my $h (@a) {
-        $c ^= pack('h*', $h);
-      }
-      my $checksum = unpack('h*', $c);
-      $checksum = 'c5' if ($checksum eq '5c');
-      push(@a, $checksum);
-      
-      my $command = join('', @a);
+    foreach my $command (@args) {
       push(@{$hash->{helper}{register}}, $command);
-      Log3 $name, 4, "$name: Request command $command";
+      Log3 $name, 4, "$name: Read command $command";
     }
+  } elsif ($opt eq "write") {
+    my $command = shift @args;
+    push(@{$hash->{helper}{register_write}}, $command);
+    Log3 $name, 4, "$name: Write command $command";
   }
 
   return;
 }
-	
+
 #NIBE_485_Notify (falls man benachrichtigt werden will)
 #NIBE_485_Rename (falls ein Gerät umbenannt wird)
 
