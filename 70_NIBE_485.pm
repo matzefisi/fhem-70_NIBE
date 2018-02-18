@@ -291,22 +291,20 @@ sub NIBE_485_Ready
 	if($hash->{STATE} eq "disconnected");
 }
 
-sub NIBE_485_Write($@) {
-  my ( $hash, @args) = @_;
+sub NIBE_485_Write($$$) {
+  my ( $hash, $opt, $arg) = @_;
   my $name = $hash->{NAME};
 
-  Log3 $name, 5, "$name: Request input ".join(', ', @args);
+  Log3 $name, 4, "$name: Request input $opt $arg";
 
-  my $opt = shift @args;
   if ($opt eq "read") {
-    foreach my $command (@args) {
+    foreach my $command (split(",", $arg)) {
       push(@{$hash->{helper}{register}}, $command);
       Log3 $name, 4, "$name: Read command $command";
     }
   } elsif ($opt eq "write") {
-    my $command = shift @args;
-    push(@{$hash->{helper}{register_write}}, $command);
-    Log3 $name, 4, "$name: Write command $command";
+    push(@{$hash->{helper}{register_write}}, $arg);
+    Log3 $name, 4, "$name: Write command $arg";
   }
 
   return;
