@@ -76,6 +76,7 @@ sub NIBE_485_Define ($)
 
 	$hash->{DeviceName}   = $dev;
 	$hash->{helper}{register} = [()];
+  $hash->{helper}{register_write} = [()];
 
 	Log3 $hash, 5, "NIBE_485: Defined";
 
