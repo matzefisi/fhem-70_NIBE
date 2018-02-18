@@ -182,7 +182,7 @@ sub NIBE_Get ($$@) {
         push(@commands, NIBE_ReadCommand($hash, $reg)) if (defined($reg));
       }
     }
-	  IOWrite($hash, "read", @commands) if (@commands);
+	  IOWrite($hash, "read", join(",", @commands)) if (@commands);
 	  return undef;
 
 	} elsif (my $reg = NIBE_RegisterId($hash, $opt)) {
