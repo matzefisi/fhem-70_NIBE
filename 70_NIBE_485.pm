@@ -252,18 +252,20 @@ sub NIBE_485_Read ($)
   
           # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
           # Happens sometimes on my side (Matthias)
-  
-          DevIo_SimpleWrite($hash, '06', 1);
-  
-          # Parse
-          if ($sender eq "00" and $length > 0) {
-              my $last = $last_time{$command};
-              $last = 1 if (!defined($last));
-              if ($command eq "6a" or time() - $last >= AttrVal($name, "interval", 30)) {
-                  $last_time{$command} = time();
-                  my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
-                  NIBE_485_Parse($hash, $name, $msg);
-              }
+
+          if ($sender eq "00") {
+            DevIo_SimpleWrite($hash, '06', 1);
+    
+            # Parse
+            if ($length > 0) {
+                my $last = $last_time{$command};
+                $last = 1 if (!defined($last));
+                if ($command eq "6a" or time() - $last >= AttrVal($name, "interval", 30)) {
+                    $last_time{$command} = time();
+                    my $msg = substr($hash->{helper}{buffer}, 0, ($length+6)*2);
+                    NIBE_485_Parse($hash, $name, $msg);
+                }
+            }
           }
         }
 
