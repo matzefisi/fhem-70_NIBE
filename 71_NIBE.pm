@@ -101,7 +101,7 @@ sub NIBE_Set ($)
 
   Log3 $name, 5, "$name: called function NIBE_Set()";
 
-  my $usage = "loadModbusFile:noArg register test";
+  my $usage = "loadModbusFile:noArg register";
   foreach my $fav (split(" ", AttrVal($name, "nibeFavorites", ""))) {
     $usage .= " $fav" if (NIBE_CheckWriteMode($hash, NIBE_RegisterId($hash, $fav), 1));
   }
@@ -173,21 +173,24 @@ sub NIBE_Get ($$@) {
 
   } elsif ($opt eq "register") {
     return "argument is missing" if ( int(@args) < 1 );
+    my @registers = ();
     my @commands = ();
     foreach my $arg (@args) {
       if ($arg =~ m/^\d{5}$/) {
+        push(@registers, $arg);
         push(@commands, NIBE_ReadCommand($hash, $arg));
       } else {
         my $reg = NIBE_RegisterId($hash, $arg);
+        push(@registers, $reg);
         push(@commands, NIBE_ReadCommand($hash, $reg)) if (defined($reg));
       }
     }
 	  IOWrite($hash, "read", join(",", @commands)) if (@commands);
-	  return undef;
+	  return join(",", @registers) . " requested, watch readings";
 
 	} elsif (my $reg = NIBE_RegisterId($hash, $opt)) {
     IOWrite($hash, "read", NIBE_ReadCommand($hash, $reg));
-    return undef;
+    return "$reg requested, watch readings";
 	}
 
 	my $usage = "register readRegisters:noArg writeRegisters:noArg";
@@ -312,6 +315,7 @@ sub NIBE_Parse ($$@) {
                         if ($version ne ReadingsVal($name, "sw_version", ""));
                 readingsBulkUpdate($hash, "product", $product)
                         if ($product ne ReadingsVal($name, "product", ""));
+                $hash->{MODEL} = $product;
             } else {
               Log3 $name, 3, "$name: other message $msg";
             }
