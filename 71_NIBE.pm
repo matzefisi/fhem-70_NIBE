@@ -277,8 +277,9 @@ sub NIBE_Parse ($$@) {
         for (my $j = 2; $j < $length+5; $j++) {
                 $checksum = $checksum^hex(substr($msg, $j*2 ,2));
         }
-        $checksum = "c5" if ($checksum eq "5c");
-    
+        $checksum = 197 if ($checksum == 92); # 92 = 5c, 197 = c5
+        Log3 $name, 5, "$name: Calculated checksum " . sprintf("%x", $checksum);
+
         # what we got so far
         Log3 $name, 5, "$name: HEAD: ".substr($msg,0,4)." ADDR: ".substr($msg,4,2)
                             ." CMD: ".substr($msg,6,2)." LEN: ".substr($msg,8,2)
