@@ -235,25 +235,25 @@ sub NIBE_485_Read ($)
         # check if not enough data yet
         last if (length($hash->{helper}{buffer})/2 < $length + 6);
 
-        if ($sender eq "00" and $command eq "69" and scalar @{$hash->{helper}{register}} > 0) {
-
-          my $reg = shift(@{$hash->{helper}{register}});
-          DevIo_SimpleWrite($hash, $reg, 1);
-          Log3 $name, 5, "$name: raw write: $reg";
-          
-        } elsif ($sender eq "00" and $command eq "6b" and scalar @{$hash->{helper}{register_write}} > 0) {
-
-          my $reg = shift(@{$hash->{helper}{register_write}});
-          DevIo_SimpleWrite($hash, $reg, 1);
-          Log3 $name, 5, "$name: raw write: $reg";
-          
-        } else {
-          # Send the ACK byte.
+        if ($sender eq "00" and $address eq "20") {
+          if ($command eq "69" and scalar @{$hash->{helper}{register}} > 0) {
   
-          # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
-          # Happens sometimes on my side (Matthias)
-
-          if ($sender eq "00") {
+            my $reg = shift(@{$hash->{helper}{register}});
+            DevIo_SimpleWrite($hash, $reg, 1);
+            Log3 $name, 5, "$name: raw write: $reg";
+            
+          } elsif ($command eq "6b" and scalar @{$hash->{helper}{register_write}} > 0) {
+  
+            my $reg = shift(@{$hash->{helper}{register_write}});
+            DevIo_SimpleWrite($hash, $reg, 1);
+            Log3 $name, 5, "$name: raw write: $reg";
+            
+          } else {
+            # Send the ACK byte.
+    
+            # Here we need to implement the CRC check and send a 0x15 if CRC was incorrect.
+            # Happens sometimes on my side (Matthias)
+  
             DevIo_SimpleWrite($hash, '06', 1);
     
             # Parse
