@@ -1,4 +1,4 @@
-# $Id: 70_NIBE_UDP.pm 001 2018-01-07 12:34:56Z VuffiRaa$
+# $Id: 70_NIBE_UDP.pm 002 2018-01-12 12:34:56Z VuffiRaa$
 ##############################################################################
 #
 #     70_NIBE_UDP.pm
@@ -24,7 +24,7 @@
 #     along with fhem.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-# Version: 0.0.1
+# Version: 0.0.2
 #
 ##############################################################################
 
@@ -35,7 +35,7 @@ use warnings;
 
 sub NIBE_UDP_Initialize ($) {
 	my ($hash) = @_;
-	
+
 	# Define the functions
 	$hash->{ReadFn}     = "NIBE_UDP::Read";				# Read serial data
 	$hash->{ReadyFn}    = "NIBE_UDP::Ready"; 			# ????
@@ -77,7 +77,7 @@ my %last_time = ();
 sub Define($) {
 	my ($hash, $def) = @_;
 	my @a = split("[ \t][ \t]*", $def);
-	return "wrong syntax: 'define <name> NIBE_UDP <address> [<port>] [<read_port>] [<write_port>'" if(@a < 3);
+	return "wrong syntax: 'define <name> NIBE_UDP <address> [<port>] [<read_port>] [<write_port>]'" if(@a < 3);
 
 	::DevIo_CloseDev($hash);
 
@@ -86,7 +86,7 @@ sub Define($) {
 	my $port = defined($a[3]) ? $a[3] : "9999";
 	my $rport = defined($a[4]) ? $a[4] : "10000";
 	my $wport = defined($a[5]) ? $a[5] : "10001";
-		
+
   $hash->{Clients} = ":NIBE:";
   my %matchList = ( "1:NIBE" => ".*" );
   $hash->{MatchList} = \%matchList;
@@ -123,7 +123,7 @@ sub Undef($) {
 sub Shutdown($) {
   my ($hash) = @_;
 
-  ::DevIo_CloseDev($hash); 
+  ::DevIo_CloseDev($hash);
 
   return undef;
 }
@@ -155,10 +155,10 @@ sub OpenDev($$) {
     }
 
     ::DoTrigger($name, "CONNECTED") if($reopen);
-    
+
     return undef;
   };
-  
+
   if($hash->{DevIoJustClosed}) {
     delete $hash->{DevIoJustClosed};
     return undef;
@@ -184,7 +184,7 @@ sub OpenDev($$) {
     delete($::readyfnlist{"$name.$dev"});
     my $timeout = $hash->{TIMEOUT} ? $hash->{TIMEOUT} : 3;
 
-    
+
     # Do common TCP/IP "afterwork":
     # if connected: set keepalive, fill selectlist, FD, TCPDev.
     # if not: report the error and schedule reconnect
@@ -222,9 +222,9 @@ sub Disconnected($) {
   my $hash = shift;
   my $dev = $hash->{DeviceName};
   my $name = $hash->{NAME};
- 	
+
   return if(!defined($hash->{FD})); # Already deleted
-	
+
   close($hash->{CD});
   delete($hash->{CD});
   ::DevIo_CloseDev($hash);
@@ -232,13 +232,13 @@ sub Disconnected($) {
 
   $::readyfnlist{"$name.$dev"} = $hash; # Start polling
   $hash->{STATE} = "disconnected";
-	
+
   # Without the following sleep the open of the device causes a SIGSEGV,
   # and following opens block infinitely. Only a reboot helps.
   sleep(0.5);
 
   ::DoTrigger($name, "DISCONNECTED");
-} 
+}
 
 sub Get($) {
 	my ($hash) = @_;
@@ -254,7 +254,7 @@ sub Read($) {
   my $hash = shift;
   my $name = $hash->{NAME};
   my $buf;
-  
+
   $hash->{CD}->recv($buf, 512);
 
 	if(!defined($buf) || length($buf) == 0) {
@@ -266,7 +266,7 @@ sub Read($) {
 
   $hash->{helper}{buffer} .= unpack ('H*', $buf);
   while ($hash->{helper}{buffer} =~ m/5c(00|41)(.{2})(.{2})(.{2}).*/) {
-    my $sender  = $1; 
+    my $sender  = $1;
     my $address = $2;
     my $command = $3;
     my $length  = hex($4);
@@ -294,8 +294,8 @@ sub Read($) {
         }
       }
 
-      $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, ($length+6)*2);            
-    }  
+      $hash->{helper}{buffer} = substr($hash->{helper}{buffer}, ($length+6)*2);
+    }
 }
 
 sub  Parse {
@@ -315,27 +315,32 @@ sub Write($$$) {
   my $dev  = $hash->{DeviceName};
   my ($host,undef) = split(':', $dev);
   my $port = $opt eq "write" ? $hash->{WriteCmdPort} : $hash->{ReadCmdPort};
+  my $msg;
 
   Log3($name, 4, "$name: Request input $opt $arg");
 
   my $sock = IO::Socket::INET->new(
-    PeerAddr => "$host:$port",
+    PeerHost => $host,
+    PeerPort => $port,
     Proto => 'udp',
     Timeout => 3);
   if ($sock) {
-    Log3($name, 3, "$name: udp connection to $host:$port opened");
+    Log3($name, 4, "$name: socket for udp destination port $port opened");
     if ($opt eq "read") {
       foreach my $command (split(",", $arg)) {
         Log3($name, 4, "$name: Read command $command");
-        $sock->send($command);
+        $msg = pack('H*', $command);
+        $sock->send($msg);
       }
     } elsif ($opt eq "write") {
-      push(@{$hash->{helper}{register_write}}, $arg);
       Log3($name, 4, "$name: Write command $arg");
+      $msg = pack('H*', $arg);
+      $sock->send($msg);
     }
     close($sock);
+    Log3($name, 4, "$name: socket for udp port $port closed");
   } else {
-    Log3($name, 1, "$name: Can't connect to udp port $port: $!");
+    Log3($name, 1, "$name: Can't open socket for udp port $port: $!");
   }
 
   return;
@@ -357,7 +362,7 @@ sub Write($$$) {
   The description of logical module <a href="#NIBE">NIBE</a>
   contains further information including an example configuration.
   <br><br>
-  
+
   <b>Define</b>
   <ul>
     <code>define &lt;name&gt; NIBE_UDP &lt;devicename&gt;</code>
@@ -379,7 +384,7 @@ sub Write($$$) {
   Das ist ein physisches Modul zur Kommunikation mit NibeGW.
   Weitere Informationen mit Beispielkonfiguration sind beim logischen Modul <a href="#NIBE">NIBE</a> zu finden.
   <br><br>
-  
+
   <b>Define</b>
   <ul>
     <code>define &lt;name&gt; NIBE_485 &lt;devicename&gt;</code>
