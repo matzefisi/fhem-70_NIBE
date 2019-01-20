@@ -1,4 +1,4 @@
-# $Id: 70_NIBE_UDP.pm 002 2018-01-12 12:34:56Z VuffiRaa$
+# $Id: 70_NIBE_UDP.pm 003 2018-01-20 12:34:56Z VuffiRaa$
 ##############################################################################
 #
 #     70_NIBE_UDP.pm
@@ -24,7 +24,7 @@
 #     along with fhem.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-# Version: 0.0.2
+# Version: 0.0.3
 #
 ##############################################################################
 
@@ -38,15 +38,15 @@ sub NIBE_UDP_Initialize ($) {
 
 	# Define the functions
 	$hash->{ReadFn}     = "NIBE_UDP::Read";				# Read serial data
-	$hash->{ReadyFn}    = "NIBE_UDP::Ready"; 			# ????
+	$hash->{ReadyFn}    = "NIBE_UDP::Ready"; 			# Bring the device into funtional state
 	$hash->{DefFn}      = "NIBE_UDP::Define";			# Define the device
 	$hash->{UndefFn}    = "NIBE_UDP::Undef"; 			# Delete the device
 	$hash->{GetFn}      = "NIBE_UDP::Get";				# Manually get data
 	$hash->{ParseFn}    = "NIBE_UDP::Parse";		  # Parse function - Only used for two step modules?
 	$hash->{WriteFn}    = "NIBE_UDP::Write";      # Write data from logical module
+	$hash->{ShutdownFn} = "NIBE_UDP::Shutdown";	  # Cleanup during shutdown
 	$hash->{AttrList}   = "do_not_notify:1,0 ".
 	                      "disable:0,1 interval"; # Define the possible Attributes
-	$hash->{ShutdownFn} = "NIBE_UDP::Shutdown";	  # ????
 }
 
 package NIBE_UDP;
@@ -59,14 +59,14 @@ use GPUtils qw(:all);  # wird für den Import der FHEM Funktionen aus der fhem.p
 
 use Socket;
 
-require "DevIo.pm";
-
 ## Import der FHEM Funktionen
 BEGIN {
     GP_Import(qw(
         AttrVal
         Dispatch
+        DoTrigger
         Log3
+        setReadingsVal
         TimeNow
     ))
 };
@@ -79,7 +79,7 @@ sub Define($) {
 	my @a = split("[ \t][ \t]*", $def);
 	return "wrong syntax: 'define <name> NIBE_UDP <address> [<port>] [<read_port>] [<write_port>]'" if(@a < 3);
 
-	::DevIo_CloseDev($hash);
+	CloseDev($hash);
 
 	my $name = $a[0];
 	my $addr = $a[2];
@@ -91,13 +91,12 @@ sub Define($) {
   my %matchList = ( "1:NIBE" => ".*" );
   $hash->{MatchList} = \%matchList;
 
- 	$hash->{DeviceName}   = "$addr:$port";
+ 	$hash->{Address}      = $addr;
+ 	$hash->{Port}         = $port;
  	$hash->{ReadCmdPort}  = $rport;
  	$hash->{WriteCmdPort} = $wport;
-	$hash->{helper}{register} = [()];
-  $hash->{helper}{register_write} = [()];
 
-	Log3($hash, 5, "NIBE_UDP: Defined");
+	Log3($hash, 5, "$name: Defined");
 
 	my $ret = OpenDev($hash, 0);
 
@@ -108,14 +107,10 @@ sub Undef($) {
 	my ($hash, $arg) = @_;
 	my $name = $hash->{NAME};
 
-	delete $hash->{FD};
-	$hash->{STATE}='close';
+  return if (!$hash->{FD});
 
-  return if (!$hash->{CD});
-
-  close($hash->{CD});
-  delete($hash->{CD});
-	Log3($hash, 0, "NIBE_UDP: Undefined");
+  CloseDev($hash);
+	Log3($hash, 0, "$name: Undefined");
 
 	return undef;
 }
@@ -123,7 +118,7 @@ sub Undef($) {
 sub Shutdown($) {
   my ($hash) = @_;
 
-  ::DevIo_CloseDev($hash);
+  CloseDev($hash);
 
   return undef;
 }
@@ -133,9 +128,15 @@ sub Ready {
   return OpenDev($hash, 0) if($hash->{STATE} eq "disconnected");
 }
 
+sub SetState($$) {
+  my ($hash, $val) = @_;
+  $hash->{STATE} = $val;
+  setReadingsVal($hash, "state", $val, TimeNow());
+}
+
 sub OpenDev($$) {
   my ($hash, $reopen) = @_;
-  my $dev = $hash->{DeviceName};
+  my $port = $hash->{Port};
   my $name = $hash->{NAME};
   my $po;
   my $nextOpenDelay = ($hash->{nextOpenDelay} ? $hash->{nextOpenDelay} : 60);
@@ -144,35 +145,27 @@ sub OpenDev($$) {
   # if fails: disconnect, schedule the next polltime for reopen
   # if ok: log message, trigger CONNECTED on reopen
   my $doTailWork = sub {
-    ::DevIo_setStates($hash, "opened");
+    SetState($hash, "opened");
 
-    my $hadFD = defined($hash->{FD});
-    my $l = $hash->{devioLoglevel}; # Forum #61970
     if($reopen) {
-      Log3($name, ($l ? $l:1), "$dev reappeared ($name)");
+      Log3($name, 1, "$name: port $port reappeared");
     } else {
-      Log3($name, ($l ? $l:3), "$name device opened") if(!$hash->{DevioText});
+      Log3($name, 3, "$name: port $port opened");
     }
 
-    ::DoTrigger($name, "CONNECTED") if($reopen);
+    DoTrigger($name, "CONNECTED") if($reopen);
 
     return undef;
   };
 
-  if($hash->{DevIoJustClosed}) {
-    delete $hash->{DevIoJustClosed};
+  if($hash->{UdpJustClosed}) {
+    delete $hash->{UdpJustClosed};
     return undef;
   }
 
-  $hash->{PARTIAL} = "";
-  Log3($name, 3, ($hash->{DevioText} ? $hash->{DevioText} : "Opening").
-       " $name device $dev") if(!$reopen);
+  Log3($name, 3, "$name: Opening port $port") if(!$reopen);
 
-  if($dev =~ m/^(.+):([0-9]+)$/) {       # host:port
-
-    my $addr = $1;
-    my $port = $2;
-
+  if($port) {
     # This part is called every time the timeout (5sec) is expired _OR_
     # somebody is communicating over another TCP connection. As the connect
     # for non-existent devices has a delay of 3 sec, we are sitting all the
@@ -181,28 +174,28 @@ sub OpenDev($$) {
       return undef;
     }
 
-    delete($::readyfnlist{"$name.$dev"});
+    delete($::readyfnlist{"$name.$port"});
     my $timeout = $hash->{TIMEOUT} ? $hash->{TIMEOUT} : 3;
 
 
-    # Do common TCP/IP "afterwork":
-    # if connected: set keepalive, fill selectlist, FD, TCPDev.
+    # Do common UDP "afterwork":
+    # if connected: fill selectlist, CD.
     # if not: report the error and schedule reconnect
-    my $doTcpTail = sub($) {
+    my $doUdpTail = sub($) {
       my ($conn) = @_;
       if($conn) {
         delete($hash->{NEXT_OPEN});
        } else {
-        Log3($name, 1, "$name: Can't connect to $dev: $!") if(!$reopen && $!);
-        $::readyfnlist{"$name.$dev"} = $hash;
-        ::DevIo_setStates($hash, "disconnected");
+        Log3($name, 1, "$name: Can't open port $port: $!") if(!$reopen && $!);
+        $::readyfnlist{"$name.$port"} = $hash;
+        SetState($hash, "disconnected");
         $hash->{NEXT_OPEN} = time() + $nextOpenDelay;
         return 0;
       }
 
       $hash->{FD} = $conn->fileno();
       $hash->{CD} = $conn;
-      $::selectlist{"$name.$dev"} = $hash;
+      $::selectlist{"$name.$port"} = $hash;
       return 1;
     };
 
@@ -211,33 +204,44 @@ sub OpenDev($$) {
         Proto => 'udp',
         Blocking => 0,
         Timeout => $timeout);
-    return "" if(!&$doTcpTail($conn)); # no callback: no doCb
+    return "" if(!&$doUdpTail($conn)); # no callback: no doCb
 
   }
 
   return &$doTailWork();
 }
 
-sub Disconnected($) {
-  my $hash = shift;
-  my $dev = $hash->{DeviceName};
+sub CloseDev($) {
+  my ($hash) = @_;
   my $name = $hash->{NAME};
+  my $port = $hash->{Port};
 
-  return if(!defined($hash->{FD})); # Already deleted
+  return if(!$port);
+  
+  delete($::selectlist{"$name.$port"});
+  delete($::readyfnlist{"$name.$port"});
 
+  delete($hash->{FD});
   close($hash->{CD});
   delete($hash->{CD});
-  ::DevIo_CloseDev($hash);
-  Log3($hash, 1, "NIBE_UDP: $dev disconnected, waiting to reappear");
+  delete($hash->{NEXT_OPEN});
+}
 
-  $::readyfnlist{"$name.$dev"} = $hash; # Start polling
-  $hash->{STATE} = "disconnected";
+sub Disconnected($) {
+  my $hash = shift;
+  my $port = $hash->{Port};
+  my $name = $hash->{NAME};
 
-  # Without the following sleep the open of the device causes a SIGSEGV,
-  # and following opens block infinitely. Only a reboot helps.
-  sleep(0.5);
+  return if(!defined($hash->{FD}));      # Already deleted
 
-  ::DoTrigger($name, "DISCONNECTED");
+  Log3($hash, 1, "$name: port $port disconnected, waiting to reappear");
+  CloseDev($hash);
+
+  $::readyfnlist{"$name.$port"} = $hash; # Start polling
+  SetState($hash, "disconnected");
+  $hash->{UdpJustClosed} = 1;            # Avoid a direct reopen
+
+  DoTrigger($name, "DISCONNECTED");
 }
 
 sub Get($) {
@@ -365,7 +369,7 @@ sub Write($$$) {
 
   <b>Define</b>
   <ul>
-    <code>define &lt;name&gt; NIBE_UDP &lt;devicename&gt;</code>
+    <code>define &lt;name&gt; NIBE_UDP &lt;ip-address&gt; [&lt;local-port&gt;] [&lt;reading-port&gt;] [&lt;writing-port&gt;]</code>
     <br><br>
   </ul>
 </ul>
@@ -387,7 +391,7 @@ sub Write($$$) {
 
   <b>Define</b>
   <ul>
-    <code>define &lt;name&gt; NIBE_485 &lt;devicename&gt;</code>
+    <code>define &lt;name&gt; NIBE_UDP &lt;ip-address&gt; [&lt;local-port&gt;] [&lt;reading-port&gt;] [&lt;writing-port&gt;]</code>
     <br><br>
   </ul>
 </ul>
