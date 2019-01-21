@@ -1,4 +1,4 @@
-# $Id: 70_NIBE_UDP.pm 003 2018-01-20 12:34:56Z VuffiRaa$
+# $Id: 70_NIBE_UDP.pm 004 2018-01-21 12:34:56Z VuffiRaa$
 ##############################################################################
 #
 #     70_NIBE_UDP.pm
@@ -24,7 +24,7 @@
 #     along with fhem.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-# Version: 0.0.3
+# Version: 0.0.4
 #
 ##############################################################################
 
@@ -92,9 +92,9 @@ sub Define($) {
   $hash->{MatchList} = \%matchList;
 
  	$hash->{Address}      = $addr;
- 	$hash->{Port}         = $port;
- 	$hash->{ReadCmdPort}  = $rport;
- 	$hash->{WriteCmdPort} = $wport;
+ 	$hash->{LocalPort}         = $port;
+ 	$hash->{PeerPortRead}  = $rport;
+ 	$hash->{PeerPortWrite} = $wport;
 
 	Log3($hash, 5, "$name: Defined");
 
@@ -136,7 +136,7 @@ sub SetState($$) {
 
 sub OpenDev($$) {
   my ($hash, $reopen) = @_;
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
   my $name = $hash->{NAME};
   my $po;
   my $nextOpenDelay = ($hash->{nextOpenDelay} ? $hash->{nextOpenDelay} : 60);
@@ -214,7 +214,7 @@ sub OpenDev($$) {
 sub CloseDev($) {
   my ($hash) = @_;
   my $name = $hash->{NAME};
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
 
   return if(!$port);
   
@@ -229,7 +229,7 @@ sub CloseDev($) {
 
 sub Disconnected($) {
   my $hash = shift;
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
   my $name = $hash->{NAME};
 
   return if(!defined($hash->{FD}));      # Already deleted
@@ -318,7 +318,7 @@ sub Write($$$) {
   my $name = $hash->{NAME};
   my $dev  = $hash->{DeviceName};
   my ($host,undef) = split(':', $dev);
-  my $port = $opt eq "write" ? $hash->{WriteCmdPort} : $hash->{ReadCmdPort};
+  my $port = $opt eq "write" ? $hash->{PeerPortWrite} : $hash->{PeerPortRead};
   my $msg;
 
   Log3($name, 4, "$name: Request input $opt $arg");
