@@ -316,15 +316,14 @@ sub  Parse {
 sub Write($$$) {
   my ( $hash, $opt, $arg) = @_;
   my $name = $hash->{NAME};
-  my $dev  = $hash->{DeviceName};
-  my ($host,undef) = split(':', $dev);
+  my $address  = $hash->{Address};
   my $port = $opt eq "write" ? $hash->{PeerPortWrite} : $hash->{PeerPortRead};
   my $msg;
 
   Log3($name, 4, "$name: Request input $opt $arg");
 
   my $sock = IO::Socket::INET->new(
-    PeerHost => $host,
+    PeerHost => $address,
     PeerPort => $port,
     Proto => 'udp',
     Timeout => 3);
