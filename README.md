@@ -57,7 +57,7 @@ FHEM modules are used for both reading from serial port as well as parsing data.
 
 - physical module (dummy for FHEM2FHEM)
 
-    define NibeWP NIBE_485 none
+  define NibeWP NIBE_485 none
     attr NibeWP dummy 1
 
 - FHEM2FHEM
@@ -67,4 +67,4 @@ FHEM modules are used for both reading from serial port as well as parsing data.
 - logical module
 
     define Nibe NIBE
-    attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
+      attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
