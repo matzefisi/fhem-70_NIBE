@@ -25,9 +25,17 @@ Restart FHEM:
 
 Run 'nibegw' like described here https://github.com/openhab/openhab2-addons/blob/master/addons/binding/org.openhab.binding.nibeheatpump/README.md
 
-Define FHEM module like
+Define FHEM modules like
+
+- physical module (dummy for FHEM2FHEM)
 
     define NibeUDP NIBE_UDP <nibegw-ipaddress>
+
+- logical module
+
+    define Nibe NIBE
+    attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
+    
 
 # 2. Solution using FHEM2FHEM
 
@@ -54,7 +62,7 @@ FHEM modules are used for both reading from serial port as well as parsing data.
 
 - FHEM2FHEM
 
-    define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
+        define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
 
 - logical module
 
