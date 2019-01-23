@@ -29,12 +29,12 @@ Define FHEM modules like
 
 - physical module (dummy for FHEM2FHEM)
 
-    define NibeUDP NIBE_UDP <nibegw-ipaddress>
+      define NibeUDP NIBE_UDP <nibegw-ipaddress>
 
 - logical module
 
-    define Nibe NIBE
-    attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
+      define Nibe NIBE
+      attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
     
 
 # 2. Solution using FHEM2FHEM
@@ -45,26 +45,26 @@ FHEM modules are used for both reading from serial port as well as parsing data.
 
 - physical module:
 
-    define NibeWP NIBE_485 /dev/ttyAMA0
+      define NibeWP NIBE_485 /dev/ttyAMA0
 
 - logical module:
 
-    define Nibe NIBE
-    attr Nibe IODev NibeWP   <-- will be set by FHEM automatically
-    attr Nibe ignore 1       <-- otherwise messages will be parsed on remote FHEM too (time critical)
+      define Nibe NIBE
+      attr Nibe IODev NibeWP   <-- will be set by FHEM automatically
+      attr Nibe ignore 1       <-- otherwise messages will be parsed on remote FHEM too (time critical)
 
 ## Fhem master
 
 - physical module (dummy for FHEM2FHEM)
 
-  define NibeWP NIBE_485 none
-    attr NibeWP dummy 1
+      define NibeWP NIBE_485 none
+      attr NibeWP dummy 1
 
 - FHEM2FHEM
 
-        define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
+      define Fhem_on_RPi FHEM2FHEM 192.168.2.47 RAW:NibeWP
 
 - logical module
 
-    define Nibe NIBE
+      define Nibe NIBE
       attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
