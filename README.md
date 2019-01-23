@@ -2,7 +2,7 @@
 
 Load the modules into FHEM:
 
-    update all https://raw.githubusercontent.com/vuffiraa72/fhem-70_NIBE/devio/controls_70_NIBE.txt
+    update all https://raw.githubusercontent.com/matzefisi/fhem-70_NIBE/devio/controls_70_NIBE.txt
 Restart FHEM:
     
     shutdown restart
@@ -34,7 +34,7 @@ Define FHEM modules like
 - logical module
 
       define Nibe NIBE
-      attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
+      attr NIBE modbusFile <absolute file path>   <-- optional, default <global-modpath>/export.csv
     
 
 # 2. Solution using FHEM2FHEM
@@ -67,4 +67,4 @@ FHEM modules are used for both reading from serial port as well as parsing data.
 - logical module
 
       define Nibe NIBE
-      attr NIBE modbusFile <absolute file path>   <-- optional, default &lt;global-modpath&gt;/export.csv
+      attr NIBE modbusFile <absolute file path>   <-- optional, default <global-modpath>/export.csv
