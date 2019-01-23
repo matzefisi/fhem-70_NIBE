@@ -27,7 +27,7 @@ Run 'nibegw' like described here https://github.com/openhab/openhab2-addons/blob
 
 Define FHEM modules like
 
-- physical module (dummy for FHEM2FHEM)
+- physical module
 
       define NibeUDP NIBE_UDP <nibegw-ipaddress>
 
