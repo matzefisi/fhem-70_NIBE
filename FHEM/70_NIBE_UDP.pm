@@ -1,4 +1,4 @@
-# $Id: 70_NIBE_UDP.pm 003 2018-01-20 12:34:56Z VuffiRaa$
+# $Id: 70_NIBE_UDP.pm 005 2018-01-22 12:34:56Z VuffiRaa$
 ##############################################################################
 #
 #     70_NIBE_UDP.pm
@@ -24,7 +24,7 @@
 #     along with fhem.  If not, see <http://www.gnu.org/licenses/>.
 #
 #
-# Version: 0.0.3
+# Version: 0.0.5
 #
 ##############################################################################
 
@@ -77,12 +77,12 @@ my %last_time = ();
 sub Define($) {
 	my ($hash, $def) = @_;
 	my @a = split("[ \t][ \t]*", $def);
-	return "wrong syntax: 'define <name> NIBE_UDP <address> [<port>] [<read_port>] [<write_port>]'" if(@a < 3);
+	return "wrong syntax: 'define <name> NIBE_UDP [<address>] [<port>] [<read_port>] [<write_port>]'" if(@a < 2);
 
 	CloseDev($hash);
 
 	my $name = $a[0];
-	my $addr = $a[2];
+	my $addr = defined($a[2]) ? $a[2] : "127.0.0.1";
 	my $port = defined($a[3]) ? $a[3] : "9999";
 	my $rport = defined($a[4]) ? $a[4] : "10000";
 	my $wport = defined($a[5]) ? $a[5] : "10001";
@@ -91,10 +91,10 @@ sub Define($) {
   my %matchList = ( "1:NIBE" => ".*" );
   $hash->{MatchList} = \%matchList;
 
- 	$hash->{Address}      = $addr;
- 	$hash->{Port}         = $port;
- 	$hash->{ReadCmdPort}  = $rport;
- 	$hash->{WriteCmdPort} = $wport;
+ 	$hash->{Address}       = $addr;
+ 	$hash->{LocalPort}     = $port;
+ 	$hash->{PeerPortRead}  = $rport;
+ 	$hash->{PeerPortWrite} = $wport;
 
 	Log3($hash, 5, "$name: Defined");
 
@@ -136,9 +136,8 @@ sub SetState($$) {
 
 sub OpenDev($$) {
   my ($hash, $reopen) = @_;
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
   my $name = $hash->{NAME};
-  my $po;
   my $nextOpenDelay = ($hash->{nextOpenDelay} ? $hash->{nextOpenDelay} : 60);
 
   # Call initFn
@@ -163,8 +162,6 @@ sub OpenDev($$) {
     return undef;
   }
 
-  Log3($name, 3, "$name: Opening port $port") if(!$reopen);
-
   if($port) {
     # This part is called every time the timeout (5sec) is expired _OR_
     # somebody is communicating over another TCP connection. As the connect
@@ -174,9 +171,10 @@ sub OpenDev($$) {
       return undef;
     }
 
+    Log3($name, 3, "$name: Opening port $port") if(!$reopen);
+
     delete($::readyfnlist{"$name.$port"});
     my $timeout = $hash->{TIMEOUT} ? $hash->{TIMEOUT} : 3;
-
 
     # Do common UDP "afterwork":
     # if connected: fill selectlist, CD.
@@ -205,7 +203,6 @@ sub OpenDev($$) {
         Blocking => 0,
         Timeout => $timeout);
     return "" if(!&$doUdpTail($conn)); # no callback: no doCb
-
   }
 
   return &$doTailWork();
@@ -214,7 +211,7 @@ sub OpenDev($$) {
 sub CloseDev($) {
   my ($hash) = @_;
   my $name = $hash->{NAME};
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
 
   return if(!$port);
   
@@ -229,7 +226,7 @@ sub CloseDev($) {
 
 sub Disconnected($) {
   my $hash = shift;
-  my $port = $hash->{Port};
+  my $port = $hash->{LocalPort};
   my $name = $hash->{NAME};
 
   return if(!defined($hash->{FD}));      # Already deleted
@@ -316,15 +313,14 @@ sub  Parse {
 sub Write($$$) {
   my ( $hash, $opt, $arg) = @_;
   my $name = $hash->{NAME};
-  my $dev  = $hash->{DeviceName};
-  my ($host,undef) = split(':', $dev);
-  my $port = $opt eq "write" ? $hash->{WriteCmdPort} : $hash->{ReadCmdPort};
+  my $address  = $hash->{Address};
+  my $port = $opt eq "write" ? $hash->{PeerPortWrite} : $hash->{PeerPortRead};
   my $msg;
 
   Log3($name, 4, "$name: Request input $opt $arg");
 
   my $sock = IO::Socket::INET->new(
-    PeerHost => $host,
+    PeerHost => $address,
     PeerPort => $port,
     Proto => 'udp',
     Timeout => 3);
